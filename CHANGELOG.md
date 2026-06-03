@@ -4,6 +4,13 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.7.7 - 2026-06-04
+
+### Fixed
+
+- Recognize first-line include directives when Verilog-A sources start with a UTF-8 byte order mark, so local includes are still staged.
+- Update SwiftPM installation guidance to start from 0.7.7.
+
 ## 0.7.6 - 2026-06-04
 
 ### Fixed

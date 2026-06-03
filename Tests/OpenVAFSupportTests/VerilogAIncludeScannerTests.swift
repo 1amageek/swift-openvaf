@@ -57,6 +57,21 @@ struct VerilogAIncludeScannerTests {
         #expect(paths == ["a.inc", "b.inc"])
     }
 
+    @Test("Scanner handles UTF-8 byte order mark before first include")
+    func scannerHandlesUTF8ByteOrderMarkBeforeFirstInclude() throws {
+        let sandbox = try TemporaryDirectory(name: "include-bom")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        var data = Data([0xEF, 0xBB, 0xBF])
+        data.append(Data("`include \"defs.inc\"\n\u{FEFF}`include \"not-first-line.inc\"\n".utf8))
+        try data.write(to: sourceURL)
+
+        let paths = try VerilogAIncludeScanner.includePaths(in: sourceURL)
+
+        #expect(paths == ["defs.inc"])
+    }
+
     private struct TemporaryDirectory {
         let url: URL
 

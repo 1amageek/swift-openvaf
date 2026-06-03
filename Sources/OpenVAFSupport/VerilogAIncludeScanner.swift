@@ -3,6 +3,7 @@ import Foundation
 package struct VerilogAIncludeScanner: Sendable {
     private var lineBytes: [UInt8] = []
     private var isInBlockComment = false
+    private var isAtStartOfFile = true
     private var paths: [String] = []
 
     package init() {}
@@ -59,9 +60,18 @@ package struct VerilogAIncludeScanner: Sendable {
     }
 
     private mutating func finishLine() {
-        guard !lineBytes.isEmpty else { return }
-        let line = String(decoding: lineBytes, as: UTF8.self)
+        guard !lineBytes.isEmpty else {
+            if isAtStartOfFile {
+                isAtStartOfFile = false
+            }
+            return
+        }
+        var line = String(decoding: lineBytes, as: UTF8.self)
         lineBytes.removeAll(keepingCapacity: true)
+        if isAtStartOfFile {
+            line.removeUTF8ByteOrderMark()
+            isAtStartOfFile = false
+        }
 
         let uncommented = Self.removingComments(from: line, isInBlockComment: &isInBlockComment)
         if let path = Self.includePath(from: uncommented) {
@@ -159,5 +169,12 @@ package struct VerilogAIncludeScanner: Sendable {
         }
 
         return nil
+    }
+}
+
+private extension String {
+    mutating func removeUTF8ByteOrderMark() {
+        guard let first = first, first == "\u{FEFF}" else { return }
+        removeFirst()
     }
 }

@@ -1251,6 +1251,59 @@ module model; endmodule
         #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("model.osdi"))
     }
 
+    @Test("Compile stages first include when source starts with UTF-8 byte order mark")
+    func compileStagesFirstIncludeWhenSourceStartsWithUTF8ByteOrderMark() async throws {
+        let sandbox = try TemporaryDirectory(name: "local-include-bom")
+        defer { sandbox.remove() }
+
+        let sourceDirectory = sandbox.url.appendingPathComponent("src")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+
+        let sourceURL = sourceDirectory.appendingPathComponent("model.va")
+        let includeURL = sourceDirectory.appendingPathComponent("params.inc")
+        var sourceData = Data([0xEF, 0xBB, 0xBF])
+        sourceData.append(Data("`include \"params.inc\"\nmodule model; endmodule\n".utf8))
+        try sourceData.write(to: sourceURL)
+        try "`define MODEL_GAIN 1\n".write(to: includeURL, atomically: true, encoding: .utf8)
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            let stagedIncludeURL = command.workingDirectory.appendingPathComponent("params.inc")
+            let stagedInclude = try String(contentsOf: stagedIncludeURL, encoding: .utf8)
+            #expect(stagedInclude == "`define MODEL_GAIN 1\n")
+
+            let outputURL = command.workingDirectory.appendingPathComponent("model.osdi")
+            try Data("osdi".utf8).write(to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: runner
+        )
+
+        let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+
+        #expect(artifact.stagedSourceURL == artifact.command.workingDirectory.appendingPathComponent("model.va"))
+        #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("model.osdi"))
+    }
+
     @Test("Compile stages quoted includes that contain comment markers in the path")
     func compileStagesQuotedIncludesThatContainCommentMarkersInThePath() async throws {
         let sandbox = try TemporaryDirectory(name: "local-include-comment-marker")
