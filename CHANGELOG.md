@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.3.1 - 2026-06-04
+
+### Fixed
+
+- Avoid treating a staged source file with a `.osdi` extension as the generated OpenVAF output when the compiler produced no output.
+
 ## 0.3.0 - 2026-06-04
 
 ### Added

@@ -753,13 +753,21 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         let outputBaseName = URL(fileURLWithPath: outputFileName)
             .deletingPathExtension()
             .lastPathComponent
-        let sourceExtension = sourceURL.pathExtension
+        let sourceExtension = stagedSourceExtension(for: sourceURL)
 
         guard !sourceExtension.isEmpty else {
             return outputBaseName
         }
 
         return "\(outputBaseName).\(sourceExtension)"
+    }
+
+    private func stagedSourceExtension(for sourceURL: URL) -> String {
+        let sourceExtension = sourceURL.pathExtension
+        guard sourceExtension.lowercased() != "osdi" else {
+            return "va"
+        }
+        return sourceExtension
     }
 
     private func sha256HexDigest(of sourceURL: URL) throws(OpenVAFError) -> String {

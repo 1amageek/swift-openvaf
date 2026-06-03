@@ -1259,6 +1259,57 @@ module model; endmodule
         #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
     }
 
+    @Test("Compile does not treat staged source as OSDI output")
+    func compileDoesNotTreatStagedSourceAsOSDIOutput() async throws {
+        let sandbox = try TemporaryDirectory(name: "source-output-collision")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("colliding.osdi")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module colliding; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "ok",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: runner
+        )
+
+        do {
+            _ = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+            Issue.record("Expected missing output error")
+        } catch let error {
+            switch error {
+            case .outputMissing(let failure):
+                #expect(failure.stagedSourceURL.lastPathComponent == "colliding.va")
+                #expect(failure.outputURL.lastPathComponent == "colliding.osdi")
+                #expect(failure.stagedSourceURL != failure.outputURL)
+                #expect(failure.exitCode == 0)
+            default:
+                Issue.record("Expected missing output error, got \(error)")
+            }
+        }
+        #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
+    }
+
     @Test("Compile fails when OSDI output is a directory")
     func compileFailsWhenOutputIsDirectory() async throws {
         let sandbox = try TemporaryDirectory(name: "output-directory")
