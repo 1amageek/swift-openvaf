@@ -345,8 +345,8 @@ struct CommandLineOpenVAFCompilerTests {
             "PATH": sandbox.url.path,
         ])
 
-        #expect(Set(first.command.environment.keys) == Set(["A", "PATH"]))
-        #expect(Set(second.command.environment.keys) == Set(["A", "C", "PATH"]))
+        #expect(first.command.environment.keys == ["A", "PATH"])
+        #expect(second.command.environment.keys == ["A", "C", "PATH"])
         #expect(first.command.environment.valueSHA256 != second.command.environment.valueSHA256)
     }
 
@@ -392,6 +392,7 @@ struct CommandLineOpenVAFCompilerTests {
 
         #expect(artifact.command.environment.source == .inherited)
         #expect(Set(artifact.command.environment.keys).isSubset(of: allowedKeys))
+        #expect(artifact.command.environment.keys == artifact.command.environment.keys.sorted())
         #expect(!artifact.command.environment.keys.contains("HOME"))
         #expect(!artifact.command.environment.keys.contains("GITHUB_TOKEN"))
         #expect(isSHA256Hex(artifact.command.environment.valueSHA256))
@@ -550,6 +551,60 @@ module model; endmodule
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
         #expect(artifact.stagedSourceURL == artifact.command.workingDirectory.appendingPathComponent("model.va"))
+        #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("model.osdi"))
+    }
+
+    @Test("Compile stages quoted includes that contain comment markers in the path")
+    func compileStagesQuotedIncludesThatContainCommentMarkersInThePath() async throws {
+        let sandbox = try TemporaryDirectory(name: "local-include-comment-marker")
+        defer { sandbox.remove() }
+
+        let sourceDirectory = sandbox.url.appendingPathComponent("src")
+        let includeDirectory = sourceDirectory.appendingPathComponent("include")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try FileManager.default.createDirectory(at: includeDirectory, withIntermediateDirectories: true)
+
+        let sourceURL = sourceDirectory.appendingPathComponent("model.va")
+        let includeURL = includeDirectory.appendingPathComponent("defs.inc")
+        try """
+`include "include//defs.inc"
+module model; endmodule
+""".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "`define MODEL_GAIN 1\n".write(to: includeURL, atomically: true, encoding: .utf8)
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            let stagedIncludeURL = command.workingDirectory.appendingPathComponent("include/defs.inc")
+            let stagedInclude = try String(contentsOf: stagedIncludeURL, encoding: .utf8)
+            #expect(stagedInclude == "`define MODEL_GAIN 1\n")
+
+            let outputURL = command.workingDirectory.appendingPathComponent("model.osdi")
+            try Data("osdi".utf8).write(to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: runner
+        )
+
+        let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+
         #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("model.osdi"))
     }
 

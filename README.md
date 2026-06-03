@@ -40,7 +40,7 @@ Add `OpenVAFSupport` as a SwiftPM dependency.
 ```swift
 .package(
     url: "https://github.com/1amageek/swift-openvaf.git",
-    from: "0.2.3"
+    from: "0.2.4"
 )
 ```
 
@@ -123,7 +123,7 @@ print(artifact.stagedSourceURL.lastPathComponent)
 print(artifact.outputURL.lastPathComponent)
 ```
 
-Output file names must be plain `.osdi` file names. Path components are rejected.
+Output file names must be plain `.osdi` file names. Empty names, NUL bytes, path components, and names that would make the staged source collide with a staged include are rejected.
 
 When the source uses local quoted Verilog-A includes, `OpenVAFSupport` stages the referenced files with the same relative layout so the staged source can still resolve them. By default, only files inside the source file's directory are staged. Set `includeRootDirectory` when a project uses parent-relative local includes.
 
@@ -231,14 +231,14 @@ let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
 | `executableNotFound` | No configured executable can be found |
 | `invalidExecutableName` | An executable name contains path components or is not a plain file name |
 | `notExecutable` | The resolved file is not executable |
-| `invalidOutputFileName` | `outputFileName` is empty, contains path components, or is not `.osdi` |
+| `invalidOutputFileName` | `outputFileName` is empty, contains NUL, contains path components, is not `.osdi`, or would collide with a staged include |
 | `fileSystemFailure` | Source validation, staging, hashing, or directory creation fails |
 | `launchFailed` | The process cannot be launched |
 | `timedOut` / `cancelled` | Availability checks time out or are cancelled |
 | `compilationTimedOut` | Compile process times out and includes failure evidence |
 | `compilationCancelled` | Compile process is cancelled and includes failure evidence |
 | `compilationFailed` | OpenVAF exits with a non-zero code |
-| `outputMissing` | OpenVAF exits successfully but the expected OSDI file is missing |
+| `outputMissing` | OpenVAF exits successfully but the expected OSDI file is missing, empty, a directory, or a symlink |
 
 ## Testing
 

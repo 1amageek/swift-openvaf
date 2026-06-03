@@ -75,6 +75,8 @@ package struct VerilogAIncludeScanner: Sendable {
     ) -> String {
         var result = ""
         var index = line.startIndex
+        var isInString = false
+        var isEscaped = false
 
         while index < line.endIndex {
             if isInBlockComment {
@@ -84,6 +86,27 @@ package struct VerilogAIncludeScanner: Sendable {
                 } else {
                     index = line.index(after: index)
                 }
+                continue
+            }
+
+            let character = line[index]
+            if isInString {
+                result.append(character)
+                if isEscaped {
+                    isEscaped = false
+                } else if character == "\\" {
+                    isEscaped = true
+                } else if character == "\"" {
+                    isInString = false
+                }
+                index = line.index(after: index)
+                continue
+            }
+
+            if character == "\"" {
+                isInString = true
+                result.append(character)
+                index = line.index(after: index)
                 continue
             }
 
@@ -97,7 +120,7 @@ package struct VerilogAIncludeScanner: Sendable {
                 break
             }
 
-            result.append(line[index])
+            result.append(character)
             index = line.index(after: index)
         }
 
