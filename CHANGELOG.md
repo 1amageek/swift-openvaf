@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.2.9 - 2026-06-04
+
+### Fixed
+
+- Ignore timeout and cancellation requests that arrive after the direct OpenVAF process exit has already been recorded.
+
 ## 0.2.8 - 2026-06-04
 
 ### Fixed

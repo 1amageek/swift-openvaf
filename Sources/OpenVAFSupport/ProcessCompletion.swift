@@ -151,7 +151,7 @@ package actor ProcessRunCoordinator {
     }
 
     package func requestTermination(_ request: ProcessTerminationRequest) {
-        if terminationRequest == nil {
+        if exitCode == nil, immediateCompletion == nil, terminationRequest == nil {
             terminationRequest = request
         }
     }
