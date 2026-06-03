@@ -73,6 +73,7 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
                 } catch {
                     return
                 }
+                guard await controller.isRunning() else { return }
                 await coordinator.requestTermination(.timedOut)
                 await controller.terminate()
 
@@ -81,6 +82,7 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
                 } catch {
                     return
                 }
+                guard await controller.isRunning() else { return }
                 await controller.forceKillIfRunning()
             })
 

@@ -83,6 +83,24 @@ struct FoundationOpenVAFProcessRunnerTests {
         #expect(elapsed < .seconds(1))
     }
 
+    @Test("Run does not time out after the direct process already exited")
+    func runDoesNotTimeOutAfterTheDirectProcessAlreadyExited() async throws {
+        let runner = FoundationOpenVAFProcessRunner()
+        let command = OpenVAFProcessCommand(
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "(sleep 1) & printf done"],
+            environment: nil,
+            workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            timeout: .milliseconds(50),
+            terminationGrace: .milliseconds(10)
+        )
+
+        let result = try await runner.run(command)
+
+        #expect(result.exitCode == 0)
+        #expect(result.standardOutput == "done")
+    }
+
     @Test("Run maps launch failures")
     func runMapsLaunchFailures() async throws {
         let runner = FoundationOpenVAFProcessRunner()

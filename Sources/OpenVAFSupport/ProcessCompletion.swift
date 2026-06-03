@@ -48,6 +48,11 @@ package actor ProcessController {
         kill(process.processIdentifier, SIGKILL)
     }
 
+    package func isRunning() -> Bool {
+        guard didStart else { return false }
+        return process.isRunning
+    }
+
     private func applyPendingTermination() {
         guard process.isRunning else { return }
         if pendingForceKill {

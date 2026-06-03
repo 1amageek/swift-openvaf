@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.2.7 - 2026-06-04
+
+### Fixed
+
+- Avoid reporting a timeout after the direct OpenVAF process has already exited successfully while output pipes are still draining.
+
 ## 0.2.6 - 2026-06-04
 
 ### Fixed
