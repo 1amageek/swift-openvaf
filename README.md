@@ -228,8 +228,8 @@ The test suite covers:
 
 | Area | Coverage |
 |---|---|
-| Resolver | Environment precedence, `PATH` lookup, non-executable rejection |
-| Compiler | Availability, staging, custom output names, version caching, cleanup policy |
+| Resolver | Environment precedence, `PATH` lookup, executable regular file validation, non-executable rejection |
+| Compiler | Availability, staging, streamed source hashing, custom output names, version caching, cleanup policy |
 | Failure artifacts | Non-zero exit, timeout, cancellation, missing output |
 | Process runner | stdout/stderr capture, large output drain, inherited pipe handles, invalid UTF-8, launch failure, timeout, cancellation |
 | End-to-end | Real OpenVAF Verilog-A to OSDI compile when OpenVAF is available |

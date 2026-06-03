@@ -92,6 +92,40 @@ struct CommandLineOpenVAFCompilerTests {
         )))
     }
 
+    @Test("Availability maps unexpected resolver errors without trapping")
+    func availabilityMapsUnexpectedResolverErrorsWithoutTrapping() async throws {
+        let runner = RecordingProcessRunner { _ in
+            Issue.record("Runner should not be called when executable resolution fails")
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": "/missing"]),
+            executableResolver: StaticExecutableResolver(error: .fileSystemFailure(
+                operation: "resolve executable",
+                path: "/missing/openvaf",
+                message: "metadata unavailable"
+            )),
+            processRunner: runner
+        )
+
+        let availability = await compiler.availability()
+
+        switch availability {
+        case .unavailable(.launchFailed(let executablePath, let message)):
+            #expect(executablePath == "<unknown>")
+            #expect(message.contains("resolve executable"))
+            #expect(message.contains("metadata unavailable"))
+        case .available, .unavailable:
+            Issue.record("Expected launch failed availability, got \(availability)")
+        }
+    }
+
     @Test("Compile stages source and returns an artifact")
     func compileStagesSourceAndReturnsArtifact() async throws {
         let sandbox = try TemporaryDirectory(name: "compile-success")
@@ -256,6 +290,48 @@ struct CommandLineOpenVAFCompilerTests {
         #expect(FileManager.default.fileExists(atPath: artifact.outputURL.path))
     }
 
+    @Test("Compile hashes source larger than digest chunk")
+    func compileHashesSourceLargerThanDigestChunk() async throws {
+        let sandbox = try TemporaryDirectory(name: "large-source-hash")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("large.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try Data(repeating: 0x61, count: 131_072).write(to: sourceURL)
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            let outputURL = command.workingDirectory.appendingPathComponent("large.osdi")
+            try Data("osdi".utf8).write(to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: runner
+        )
+
+        let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+
+        #expect(artifact.sourceSHA256 == "b44ffb72fcc259676bd80495fef1b44b808ca8f1ffe1b1706a4d7911b0e31f11")
+        #expect(FileManager.default.fileExists(atPath: artifact.outputURL.path))
+    }
+
     @Test("Compile maps non-zero OpenVAF exit")
     func compileMapsNonZeroOpenVAFExit() async throws {
         let sandbox = try TemporaryDirectory(name: "compile-failed")
@@ -337,6 +413,60 @@ struct CommandLineOpenVAFCompilerTests {
             case .compilationFailed(let failure):
                 #expect(FileManager.default.fileExists(atPath: failure.command.workingDirectory.path))
                 #expect(FileManager.default.fileExists(atPath: failure.stagedSourceURL.path))
+            default:
+                Issue.record("Expected compilation failure, got \(error)")
+            }
+        }
+        #expect(openVAFWorkingDirectories(in: outputDirectory).count == 1)
+    }
+
+    @Test("Compile preserves primary failure when cleanup cannot remove working directory")
+    func compilePreservesPrimaryFailureWhenCleanupCannotRemoveWorkingDirectory() async throws {
+        let sandbox = try TemporaryDirectory(name: "cleanup-failure-primary-error")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("cleanup.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module cleanup; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+        defer { restoreWritablePermissions(at: outputDirectory) }
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o555],
+                ofItemAtPath: outputDirectory.path
+            )
+            return OpenVAFProcessResult(
+                exitCode: 2,
+                standardOutput: "",
+                standardError: "syntax error",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: runner
+        )
+
+        do {
+            _ = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+            Issue.record("Expected compilation failure")
+        } catch let error {
+            switch error {
+            case .compilationFailed(let failure):
+                #expect(failure.standardError == "syntax error")
+                #expect(failure.command.workingDirectory.path.hasPrefix(outputDirectory.path))
             default:
                 Issue.record("Expected compilation failure, got \(error)")
             }
@@ -797,6 +927,19 @@ private func openVAFWorkingDirectories(in outputDirectory: URL) -> [URL] {
     } catch {
         Issue.record("Failed to list output directory \(outputDirectory.path): \(error)")
         return []
+    }
+}
+
+private func restoreWritablePermissions(at url: URL) {
+    do {
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: url.path
+            )
+        }
+    } catch {
+        Issue.record("Failed to restore writable permissions for \(url.path): \(error)")
     }
 }
 

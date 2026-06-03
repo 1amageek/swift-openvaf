@@ -55,6 +55,56 @@ struct PATHOpenVAFExecutableResolverTests {
             try PATHOpenVAFExecutableResolver().resolve(.path(fileURL.path), environment: [:])
         }
     }
+
+    @Test("Path lookup rejects executable directory")
+    func pathLookupRejectsExecutableDirectory() throws {
+        let sandbox = try TemporaryDirectory(name: "resolver-directory-path")
+        defer { sandbox.remove() }
+
+        let directoryURL = sandbox.url.appendingPathComponent("openvaf")
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+
+        #expect(throws: OpenVAFError.notExecutable(path: directoryURL.path)) {
+            try PATHOpenVAFExecutableResolver().resolve(.path(directoryURL.path), environment: [:])
+        }
+    }
+
+    @Test("PATH lookup skips executable directories")
+    func pathLookupSkipsExecutableDirectories() throws {
+        let sandbox = try TemporaryDirectory(name: "resolver-directory-in-path")
+        defer { sandbox.remove() }
+
+        let directoryCandidateRoot = sandbox.url.appendingPathComponent("directory-candidate")
+        let fileCandidateRoot = sandbox.url.appendingPathComponent("file-candidate")
+        try FileManager.default.createDirectory(at: directoryCandidateRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: fileCandidateRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: directoryCandidateRoot.appendingPathComponent("openvaf"),
+            withIntermediateDirectories: true
+        )
+        let executable = try createExecutable(at: fileCandidateRoot.appendingPathComponent("openvaf"))
+
+        let resolved = try PATHOpenVAFExecutableResolver().resolve(
+            .name("openvaf"),
+            environment: ["PATH": "\(directoryCandidateRoot.path):\(fileCandidateRoot.path)"]
+        )
+
+        #expect(resolved == executable)
+    }
+
+    @Test("Path lookup accepts executable symlink")
+    func pathLookupAcceptsExecutableSymlink() throws {
+        let sandbox = try TemporaryDirectory(name: "resolver-symlink")
+        defer { sandbox.remove() }
+
+        let executable = try createExecutable(at: sandbox.url.appendingPathComponent("openvaf-real"))
+        let symlink = sandbox.url.appendingPathComponent("openvaf")
+        try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: executable)
+
+        let resolved = try PATHOpenVAFExecutableResolver().resolve(.path(symlink.path), environment: [:])
+
+        #expect(resolved == symlink)
+    }
 }
 
 @discardableResult

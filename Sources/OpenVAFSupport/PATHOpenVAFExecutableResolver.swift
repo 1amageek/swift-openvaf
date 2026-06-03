@@ -29,7 +29,7 @@ package struct PATHOpenVAFExecutableResolver: OpenVAFExecutableResolving {
 
     private func resolvePath(_ path: String) throws(OpenVAFError) -> URL {
         let url = URL(fileURLWithPath: path)
-        guard FileManager.default.isExecutableFile(atPath: url.path) else {
+        guard isExecutableRegularFile(at: url) else {
             throw .notExecutable(path: path)
         }
         return url
@@ -39,7 +39,7 @@ package struct PATHOpenVAFExecutableResolver: OpenVAFExecutableResolving {
         let searchedPaths = searchPaths(from: environment)
         for directory in searchedPaths {
             let candidate = URL(fileURLWithPath: directory).appendingPathComponent(name)
-            if FileManager.default.isExecutableFile(atPath: candidate.path) {
+            if isExecutableRegularFile(at: candidate) {
                 return candidate
             }
         }
@@ -51,5 +51,23 @@ package struct PATHOpenVAFExecutableResolver: OpenVAFExecutableResolving {
         return path
             .split(separator: ":", omittingEmptySubsequences: true)
             .map(String.init)
+    }
+
+    private func isExecutableRegularFile(at url: URL) -> Bool {
+        let fileManager = FileManager.default
+        var isDirectory = ObjCBool(false)
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue,
+              fileManager.isExecutableFile(atPath: url.path) else {
+            return false
+        }
+
+        do {
+            let resolvedURL = url.resolvingSymlinksInPath()
+            let values = try resolvedURL.resourceValues(forKeys: [.isRegularFileKey])
+            return values.isRegularFile == true
+        } catch {
+            return false
+        }
     }
 }

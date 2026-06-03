@@ -321,19 +321,45 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
     }
 
     private func sha256HexDigest(of sourceURL: URL) throws(OpenVAFError) -> String {
-        let data: Data
-        do {
-            data = try Data(contentsOf: sourceURL)
-        } catch {
+        guard let stream = InputStream(url: sourceURL) else {
             throw .fileSystemFailure(
                 operation: "hash source",
                 path: sourceURL.path,
-                message: error.localizedDescription
+                message: "Unable to open input stream"
+            )
+        }
+        stream.open()
+        defer { stream.close() }
+
+        var hasher = SHA256()
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        while true {
+            let byteCount = buffer.withUnsafeMutableBufferPointer { pointer in
+                guard let baseAddress = pointer.baseAddress else { return 0 }
+                return stream.read(baseAddress, maxLength: pointer.count)
+            }
+
+            if byteCount > 0 {
+                buffer.withUnsafeBufferPointer { pointer in
+                    guard let baseAddress = pointer.baseAddress else { return }
+                    let rawBuffer = UnsafeRawBufferPointer(start: baseAddress, count: byteCount)
+                    hasher.update(bufferPointer: rawBuffer)
+                }
+                continue
+            }
+
+            if byteCount == 0 {
+                break
+            }
+
+            throw .fileSystemFailure(
+                operation: "hash source",
+                path: sourceURL.path,
+                message: stream.streamError?.localizedDescription ?? "Input stream read failed"
             )
         }
 
-        let digest = SHA256.hash(data: data)
-        return sha256HexDigest(of: digest)
+        return sha256HexDigest(of: hasher.finalize())
     }
 
     private func sha256HexDigest(of environment: [String: String]) -> String {
@@ -410,9 +436,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 try FileManager.default.removeItem(at: url)
             }
         } catch {
-            // Preserve the primary compile failure. Cleanup failure is secondary and
-            // the original working directory path remains visible through logs/tests.
-            assertionFailure("Failed to remove OpenVAF working directory \(url.path): \(error)")
+            // Preserve the primary compile failure. Cleanup failure is secondary.
         }
     }
 
@@ -505,7 +529,6 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 .compilationCancelled,
                 .compilationFailed,
                 .outputMissing:
-            assertionFailure("Unexpected OpenVAFError in availability path: \(error)")
             return .launchFailed(executablePath: "<unknown>", message: error.localizedDescription)
         }
     }
@@ -558,7 +581,6 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         do {
             regex = try NSRegularExpression(pattern: pattern)
         } catch {
-            assertionFailure("Invalid OpenVAF version regex: \(error)")
             return []
         }
         let range = NSRange(text.startIndex..<text.endIndex, in: text)

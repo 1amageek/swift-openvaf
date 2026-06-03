@@ -16,6 +16,9 @@ All notable changes to this package will be documented in this file.
 - Simplify the E2E Verilog-A fixture for broader OpenVAF compatibility.
 - Drain process output pipes more reliably while avoiding inherited pipe handle hangs.
 - Run CI tests through the repository timeout script so hangs fail explicitly.
+- Validate OpenVAF executable candidates as regular executable files, while preserving executable symlink support.
+- Stream source hashing instead of loading the full source into memory.
+- Preserve primary compile errors when failed working directory cleanup also fails.
 
 ## 0.1.0 - 2026-06-03
 
