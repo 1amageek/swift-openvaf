@@ -364,6 +364,32 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         let fileManager = FileManager.default
         let outputDirectory = request.outputDirectory
         let sourceURL = request.sourceURL
+        guard sourceURL.isFileURL else {
+            throw .fileSystemFailure(
+                operation: "validate source",
+                path: sourceURL.absoluteString,
+                message: "Source URL must be a file URL"
+            )
+        }
+
+        guard outputDirectory.isFileURL else {
+            throw .fileSystemFailure(
+                operation: "validate output directory",
+                path: outputDirectory.absoluteString,
+                message: "Output directory URL must be a file URL"
+            )
+        }
+
+        if let includeRootDirectory = request.includeRootDirectory {
+            guard includeRootDirectory.isFileURL else {
+                throw .fileSystemFailure(
+                    operation: "validate include root",
+                    path: includeRootDirectory.absoluteString,
+                    message: "Include root URL must be a file URL"
+                )
+            }
+        }
+
         let outputFileName = try validatedOutputFileName(
             request.outputFileName,
             sourceURL: sourceURL

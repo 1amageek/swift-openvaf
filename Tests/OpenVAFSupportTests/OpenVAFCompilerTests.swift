@@ -327,6 +327,110 @@ struct CommandLineOpenVAFCompilerTests {
         #expect(FileManager.default.fileExists(atPath: artifact.outputURL.path))
     }
 
+    @Test("Compile rejects non-file source URLs before launching")
+    func compileRejectsNonFileSourceURLsBeforeLaunching() async throws {
+        let sandbox = try TemporaryDirectory(name: "non-file-source-url")
+        defer { sandbox.remove() }
+
+        let sourceURL = URL(string: "https://example.com/model.va")!
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when the source URL is not a file URL")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "validate source",
+            path: sourceURL.absoluteString,
+            message: "Source URL must be a file URL"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
+    @Test("Compile rejects non-file output directory URLs before launching")
+    func compileRejectsNonFileOutputDirectoryURLsBeforeLaunching() async throws {
+        let sandbox = try TemporaryDirectory(name: "non-file-output-directory-url")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        let outputDirectory = URL(string: "https://example.com/build/openvaf")!
+        try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when the output directory URL is not a file URL")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "validate output directory",
+            path: outputDirectory.absoluteString,
+            message: "Output directory URL must be a file URL"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+    }
+
+    @Test("Compile rejects non-file include root URLs before launching")
+    func compileRejectsNonFileIncludeRootURLsBeforeLaunching() async throws {
+        let sandbox = try TemporaryDirectory(name: "non-file-include-root-url")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        let includeRootDirectory = URL(string: "https://example.com/project")!
+        try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when the include root URL is not a file URL")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "validate include root",
+            path: includeRootDirectory.absoluteString,
+            message: "Include root URL must be a file URL"
+        )) {
+            try await compiler.compile(OpenVAFCompilationRequest(
+                sourceURL: sourceURL,
+                outputDirectory: outputDirectory,
+                includeRootDirectory: includeRootDirectory
+            ))
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
     @Test("Compile fingerprints explicit environment without delimiter collisions")
     func compileFingerprintsExplicitEnvironmentWithoutDelimiterCollisions() async throws {
         let sandbox = try TemporaryDirectory(name: "environment-fingerprint")

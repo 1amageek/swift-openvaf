@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.4.5 - 2026-06-04
+
+### Fixed
+
+- Reject non-file compilation request URLs before executable resolution or process launch so remote URL schemes cannot be interpreted as local filesystem paths during staging.
+
 ## 0.4.4 - 2026-06-04
 
 ### Fixed
