@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.3.4 - 2026-06-04
+
+### Fixed
+
+- Refresh cached OpenVAF installation metadata when the executable at a previously used path changes.
+
 ## 0.3.3 - 2026-06-04
 
 ### Fixed
