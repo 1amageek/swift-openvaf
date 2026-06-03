@@ -399,13 +399,21 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             startingAt: sourceURL,
             includeRootDirectory: includeRootDirectory
         )
+        let stagedFileName = stagedSourceFileName(
+            outputFileName: outputFileName,
+            sourceURL: sourceURL
+        )
+        try validateStagedSourceName(
+            stagedFileName,
+            sourceURL: sourceURL,
+            includeRootDirectory: includeRootDirectory,
+            includeURLs: includeURLs,
+            outputFileName: outputFileName
+        )
 
         return ValidatedSource(
             sourceURL: sourceURL,
-            stagedSourceFileName: stagedSourceFileName(
-                outputFileName: outputFileName,
-                sourceURL: sourceURL
-            ),
+            stagedSourceFileName: stagedFileName,
             outputDirectory: outputDirectory,
             outputFileName: outputFileName,
             includeRootDirectory: includeRootDirectory,
@@ -630,9 +638,6 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                     at: stagedIncludeURL.deletingLastPathComponent(),
                     withIntermediateDirectories: true
                 )
-                if FileManager.default.fileExists(atPath: stagedIncludeURL.path) {
-                    try FileManager.default.removeItem(at: stagedIncludeURL)
-                }
                 try FileManager.default.copyItem(
                     at: includeURL.resolvingSymlinksInPath(),
                     to: stagedIncludeURL
@@ -684,6 +689,36 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         )
     }
 
+    private func validateStagedSourceName(
+        _ stagedFileName: String,
+        sourceURL: URL,
+        includeRootDirectory: URL,
+        includeURLs: [URL],
+        outputFileName: String
+    ) throws(OpenVAFError) {
+        let stagedSourceURL = sourceURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(stagedFileName)
+            .standardized
+        let stagedSourceRelativePath = try relativePath(
+            from: includeRootDirectory,
+            to: stagedSourceURL
+        )
+
+        for includeURL in includeURLs {
+            let includeRelativePath = try relativePath(
+                from: includeRootDirectory,
+                to: includeURL
+            )
+            guard includeRelativePath != stagedSourceRelativePath else {
+                throw .invalidOutputFileName(
+                    outputFileName,
+                    message: "Output file name would collide with a staged include"
+                )
+            }
+        }
+    }
+
     private func validatedOutputFileName(
         _ requestedFileName: String?,
         sourceURL: URL
@@ -693,6 +728,10 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
 
         guard !fileName.isEmpty else {
             throw .invalidOutputFileName(fileName, message: "File name must not be empty")
+        }
+
+        guard !containsNUL(fileName) else {
+            throw .invalidOutputFileName(fileName, message: "File name must not contain NUL")
         }
 
         guard fileName == URL(fileURLWithPath: fileName).lastPathComponent else {
@@ -871,6 +910,11 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         }
 
         do {
+            let outputValues = try url.resourceValues(forKeys: [.isSymbolicLinkKey])
+            guard outputValues.isSymbolicLink != true else {
+                return false
+            }
+
             let resolvedURL = url.resolvingSymlinksInPath()
             let values = try resolvedURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
             guard values.isRegularFile == true,

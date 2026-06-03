@@ -4,6 +4,14 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.2.3 - 2026-06-04
+
+### Fixed
+
+- Reject custom output file names that would make the staged source overwrite or replace a staged local include.
+- Reject NUL bytes in custom output file names before staging.
+- Treat symlinked OSDI outputs as missing outputs so successful artifacts always point at a regular retained output file.
+
 ## 0.2.2 - 2026-06-04
 
 ### Changed

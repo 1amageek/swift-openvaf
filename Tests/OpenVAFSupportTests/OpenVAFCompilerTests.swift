@@ -789,6 +789,48 @@ module model; endmodule
         #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
     }
 
+    @Test("Compile rejects output file names that collide with staged includes")
+    func compileRejectsOutputFileNamesThatCollideWithStagedIncludes() async throws {
+        let sandbox = try TemporaryDirectory(name: "staged-source-include-collision")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        let includeURL = sandbox.url.appendingPathComponent("defs.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try """
+`include "defs.va"
+module model; endmodule
+""".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "module defs; endmodule\n".write(to: includeURL, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when output file name collides with a staged include")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.invalidOutputFileName(
+            "defs.osdi",
+            message: "Output file name would collide with a staged include"
+        )) {
+            try await compiler.compile(OpenVAFCompilationRequest(
+                sourceURL: sourceURL,
+                outputDirectory: outputDirectory,
+                outputFileName: "defs.osdi"
+            ))
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
     @Test("Compile hashes source larger than digest chunk")
     func compileHashesSourceLargerThanDigestChunk() async throws {
         let sandbox = try TemporaryDirectory(name: "large-source-hash")
@@ -1213,6 +1255,63 @@ module model; endmodule
         #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
     }
 
+    @Test("Compile fails when OSDI output is a symlink")
+    func compileFailsWhenOutputIsSymlink() async throws {
+        let sandbox = try TemporaryDirectory(name: "output-symlink")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("symlink.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        let externalOutputURL = sandbox.url.appendingPathComponent("external.osdi")
+        try "module symlink; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try Data("external-osdi".utf8).write(to: externalOutputURL)
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            let outputURL = command.workingDirectory.appendingPathComponent("symlink.osdi")
+            try FileManager.default.createSymbolicLink(
+                at: outputURL,
+                withDestinationURL: externalOutputURL
+            )
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "ok",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: runner
+        )
+
+        do {
+            _ = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+            Issue.record("Expected symlink output error")
+        } catch let error {
+            switch error {
+            case .outputMissing(let failure):
+                #expect(failure.outputURL.lastPathComponent == "symlink.osdi")
+                #expect(failure.exitCode == 0)
+            default:
+                Issue.record("Expected missing output error, got \(error)")
+            }
+        }
+        #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
+        #expect(FileManager.default.fileExists(atPath: externalOutputURL.path))
+    }
+
     @Test("Compile fails when OSDI output is empty")
     func compileFailsWhenOutputIsEmpty() async throws {
         let sandbox = try TemporaryDirectory(name: "output-empty")
@@ -1295,6 +1394,41 @@ module model; endmodule
                 sourceURL: sourceURL,
                 outputDirectory: sandbox.url.appendingPathComponent("out"),
                 outputFileName: "model.so"
+            ))
+        }
+    }
+
+    @Test("Compile rejects output file names containing NUL")
+    func compileRejectsOutputFileNamesContainingNUL() async throws {
+        let sandbox = try TemporaryDirectory(name: "invalid-output-nul")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when output file name contains NUL")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.invalidOutputFileName(
+            "model\0.osdi",
+            message: "File name must not contain NUL"
+        )) {
+            try await compiler.compile(OpenVAFCompilationRequest(
+                sourceURL: sourceURL,
+                outputDirectory: sandbox.url.appendingPathComponent("out"),
+                outputFileName: "model\0.osdi"
             ))
         }
     }

@@ -40,7 +40,7 @@ Add `OpenVAFSupport` as a SwiftPM dependency.
 ```swift
 .package(
     url: "https://github.com/1amageek/swift-openvaf.git",
-    from: "0.2.2"
+    from: "0.2.3"
 )
 ```
 
