@@ -20,6 +20,38 @@ jobs:
       - name: Show Swift version
         run: swift --version
 
+      - name: Check timeout helper
+        run: |
+          set +e
+          scripts/swift-test-timeout.sh 5 /bin/sh -c 'exit 7'
+          exit_status=$?
+          set -e
+          test "$exit_status" -eq 7
+
+          timeout_dir="$(mktemp -d)"
+          set +e
+          scripts/swift-test-timeout.sh 1 /bin/sh -c 'sleep 10 & echo $! > "$1/child.pid"; sleep 10' sh "$timeout_dir"
+          exit_status=$?
+          set -e
+          test "$exit_status" -eq 124
+          timeout_child="$(cat "$timeout_dir/child.pid")"
+          sleep 1
+          if kill -0 "$timeout_child" 2>/dev/null; then
+            kill -KILL "$timeout_child" 2>/dev/null || true
+            exit 1
+          fi
+          rm -rf "$timeout_dir"
+
+          cleanup_dir="$(mktemp -d)"
+          scripts/swift-test-timeout.sh 5 /bin/sh -c 'sleep 10 & echo $! > "$1/child.pid"; exit 0' sh "$cleanup_dir"
+          cleanup_child="$(cat "$cleanup_dir/child.pid")"
+          sleep 1
+          if kill -0 "$cleanup_child" 2>/dev/null; then
+            kill -KILL "$cleanup_child" 2>/dev/null || true
+            exit 1
+          fi
+          rm -rf "$cleanup_dir"
+
       - name: Build
         run: swift build
 

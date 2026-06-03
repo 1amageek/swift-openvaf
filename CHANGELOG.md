@@ -22,7 +22,8 @@ All notable changes to this package will be documented in this file.
 - Stage symlinked sources as regular file contents and reject non-regular source inputs.
 - Treat missing, directory, and empty OSDI outputs as failed outputs instead of successful artifacts.
 - Preserve primary compile errors when failed working directory cleanup also fails.
-- Terminate the full test command process group on timeout to avoid stale child processes.
+- Terminate the full test command process group on timeout and after command completion to avoid stale child processes.
+- Add CI smoke coverage for the repository timeout helper.
 
 ## 0.1.0 - 2026-06-03
 

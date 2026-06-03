@@ -29,7 +29,9 @@ my $deadline = time() + $timeout_seconds;
 while (1) {
     my $finished = waitpid($child_pid, WNOHANG);
     if ($finished == $child_pid) {
-        exit exit_code($?);
+        my $code = exit_code($?);
+        cleanup_process_group($child_pid);
+        exit $code;
     }
     if ($finished == -1) {
         exit 1;
@@ -49,6 +51,13 @@ while (1) {
 sub terminate_process_group {
     my ($process_group_id, $signal) = @_;
     kill $signal, -$process_group_id;
+}
+
+sub cleanup_process_group {
+    my ($process_group_id) = @_;
+    terminate_process_group($process_group_id, "TERM");
+    select undef, undef, undef, 0.1;
+    terminate_process_group($process_group_id, "KILL");
 }
 
 sub exit_code {
