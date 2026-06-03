@@ -4,6 +4,14 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.7.8 - 2026-06-04
+
+### Fixed
+
+- Discover and stage Verilog-A includes from the copied staging snapshot instead of the mutable source tree, so source and include edits between validation and staging cannot leave staged includes out of sync with the staged source.
+- Keep include validation failures from launching OpenVAF version or compile commands, while still cleaning newly-created empty output directories after staging failures.
+- Update SwiftPM installation guidance to start from 0.7.8.
+
 ## 0.7.7 - 2026-06-04
 
 ### Fixed

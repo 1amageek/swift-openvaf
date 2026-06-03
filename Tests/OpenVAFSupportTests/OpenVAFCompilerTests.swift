@@ -1304,6 +1304,139 @@ module model; endmodule
         #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("model.osdi"))
     }
 
+    @Test("Compile stages includes discovered from the staged source snapshot")
+    func compileStagesIncludesDiscoveredFromStagedSourceSnapshot() async throws {
+        let sandbox = try TemporaryDirectory(name: "staged-source-include-snapshot")
+        defer { sandbox.remove() }
+
+        let sourceDirectory = sandbox.url.appendingPathComponent("src")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        let executableURL = sandbox.url.appendingPathComponent("openvaf")
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        try writeExecutableMarker("stable", to: executableURL)
+
+        let sourceURL = sourceDirectory.appendingPathComponent("model.va")
+        let includeURL = sourceDirectory.appendingPathComponent("params.inc")
+        try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "`define MODEL_GAIN 1\n".write(to: includeURL, atomically: true, encoding: .utf8)
+
+        let replacementSource = """
+`include "params.inc"
+module model; endmodule
+"""
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            let stagedSourceURL = command.workingDirectory.appendingPathComponent("model.va")
+            let stagedSource = try String(contentsOf: stagedSourceURL, encoding: .utf8)
+            #expect(stagedSource == replacementSource)
+
+            let stagedIncludeURL = command.workingDirectory.appendingPathComponent("params.inc")
+            let stagedInclude = try String(contentsOf: stagedIncludeURL, encoding: .utf8)
+            #expect(stagedInclude == "`define MODEL_GAIN 1\n")
+
+            let outputURL = command.workingDirectory.appendingPathComponent("model.osdi")
+            try Data("osdi".utf8).write(to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: OverwritingFileExecutableResolver(
+                executableURL: executableURL,
+                fileURL: sourceURL,
+                contents: replacementSource
+            ),
+            processRunner: runner
+        )
+
+        let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+
+        #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("model.osdi"))
+    }
+
+    @Test("Compile stages nested includes discovered from staged include snapshots")
+    func compileStagesNestedIncludesDiscoveredFromStagedIncludeSnapshots() async throws {
+        let sandbox = try TemporaryDirectory(name: "staged-nested-include-snapshot")
+        defer { sandbox.remove() }
+
+        let sourceDirectory = sandbox.url.appendingPathComponent("src")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        let executableURL = sandbox.url.appendingPathComponent("openvaf")
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        try writeExecutableMarker("stable", to: executableURL)
+
+        let sourceURL = sourceDirectory.appendingPathComponent("model.va")
+        let includeURL = sourceDirectory.appendingPathComponent("params.inc")
+        let nestedIncludeURL = sourceDirectory.appendingPathComponent("nested.inc")
+        try """
+`include "params.inc"
+module model; endmodule
+""".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "`define MODEL_GAIN 1\n".write(to: includeURL, atomically: true, encoding: .utf8)
+        try "`define MODEL_OFFSET 2\n".write(to: nestedIncludeURL, atomically: true, encoding: .utf8)
+
+        let replacementInclude = """
+`include "nested.inc"
+`define MODEL_GAIN 1
+"""
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            let stagedIncludeURL = command.workingDirectory.appendingPathComponent("params.inc")
+            let stagedInclude = try String(contentsOf: stagedIncludeURL, encoding: .utf8)
+            #expect(stagedInclude == replacementInclude)
+
+            let stagedNestedIncludeURL = command.workingDirectory.appendingPathComponent("nested.inc")
+            let stagedNestedInclude = try String(contentsOf: stagedNestedIncludeURL, encoding: .utf8)
+            #expect(stagedNestedInclude == "`define MODEL_OFFSET 2\n")
+
+            let outputURL = command.workingDirectory.appendingPathComponent("model.osdi")
+            try Data("osdi".utf8).write(to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: OverwritingFileExecutableResolver(
+                executableURL: executableURL,
+                fileURL: includeURL,
+                contents: replacementInclude
+            ),
+            processRunner: runner
+        )
+
+        let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+
+        #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("model.osdi"))
+    }
+
     @Test("Compile stages quoted includes that contain comment markers in the path")
     func compileStagesQuotedIncludesThatContainCommentMarkersInThePath() async throws {
         let sandbox = try TemporaryDirectory(name: "local-include-comment-marker")
@@ -3410,6 +3543,28 @@ private struct DeletingExecutableResolver: OpenVAFExecutableResolving {
             )
         }
         return url
+    }
+}
+
+private struct OverwritingFileExecutableResolver: OpenVAFExecutableResolving {
+    let executableURL: URL
+    let fileURL: URL
+    let contents: String
+
+    func resolve(
+        _ executable: OpenVAFExecutable,
+        environment: [String: String]
+    ) throws(OpenVAFError) -> URL {
+        do {
+            try Data(contents.utf8).write(to: fileURL)
+        } catch {
+            throw .fileSystemFailure(
+                operation: "overwrite file",
+                path: fileURL.path,
+                message: error.localizedDescription
+            )
+        }
+        return executableURL
     }
 }
 
