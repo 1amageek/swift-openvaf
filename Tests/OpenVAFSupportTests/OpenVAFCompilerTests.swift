@@ -860,6 +860,59 @@ module model; endmodule
         #expect(artifact.outputURL.lastPathComponent == "model.osdi")
     }
 
+    @Test("Compile scans resolved include files once through symlink cycles")
+    func compileScansResolvedIncludeFilesOnceThroughSymlinkCycles() async throws {
+        let sandbox = try TemporaryDirectory(name: "include-symlink-cycle")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        let loopURL = sandbox.url.appendingPathComponent("loop")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try """
+`include "loop/model.va"
+module model; endmodule
+""".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: loopURL, withDestinationURL: sandbox.url)
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            let stagedLoopSourceURL = command.workingDirectory.appendingPathComponent("loop/model.va")
+            let values = try stagedLoopSourceURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            #expect(values.isRegularFile == true)
+            #expect(values.isSymbolicLink != true)
+
+            let outputURL = command.workingDirectory.appendingPathComponent("model.osdi")
+            try Data("osdi".utf8).write(to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: runner
+        )
+
+        let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        let commands = await runner.recordedCommands()
+
+        #expect(artifact.outputURL.lastPathComponent == "model.osdi")
+        #expect(commands.filter { $0.arguments == ["model.va"] }.count == 1)
+    }
+
     @Test("Compile rejects local include symlinks that resolve outside the include root")
     func compileRejectsLocalIncludeSymlinksOutsideTheIncludeRoot() async throws {
         let sandbox = try TemporaryDirectory(name: "outside-include-root-symlink")

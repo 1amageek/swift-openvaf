@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.4.2 - 2026-06-04
+
+### Fixed
+
+- Avoid unbounded local include discovery when symlinked include paths resolve back to a previously scanned Verilog-A file.
+
 ## 0.4.1 - 2026-06-04
 
 ### Fixed

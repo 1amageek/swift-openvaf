@@ -537,10 +537,11 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
     ) throws(OpenVAFError) -> [URL] {
         var pending = [sourceURL]
         var visited: Set<String> = []
+        var stagedIncludes: Set<String> = []
         var includes: [URL] = []
 
         while let currentURL = pending.popLast() {
-            let currentKey = currentURL.standardized.path
+            let currentKey = currentURL.resolvingSymlinksInPath().standardized.path
             guard !visited.contains(currentKey) else { continue }
             visited.insert(currentKey)
 
@@ -557,11 +558,12 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 }
 
                 let includeKey = includeURL.standardized.path
-                if !includes.contains(where: { $0.standardized.path == includeKey }) {
+                if stagedIncludes.insert(includeKey).inserted {
                     includes.append(includeURL)
                 }
 
-                if !visited.contains(includeKey) {
+                let includeScanKey = includeURL.resolvingSymlinksInPath().standardized.path
+                if !visited.contains(includeScanKey) {
                     pending.append(includeURL)
                 }
             }
