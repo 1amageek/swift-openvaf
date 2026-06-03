@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.3.8 - 2026-06-04
+
+### Fixed
+
+- Do not search the current directory when `PATH` is missing or empty during OpenVAF executable discovery.
+
 ## 0.3.7 - 2026-06-04
 
 ### Fixed

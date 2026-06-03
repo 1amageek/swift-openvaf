@@ -93,6 +93,32 @@ struct PATHOpenVAFExecutableResolverTests {
         }
     }
 
+    @Test("PATH lookup does not search current directory when PATH is missing")
+    func pathLookupDoesNotSearchCurrentDirectoryWhenPATHIsMissing() throws {
+        #expect(throws: OpenVAFError.executableNotFound(
+            name: "definitely-missing-openvaf",
+            searchedPaths: []
+        )) {
+            try PATHOpenVAFExecutableResolver().resolve(
+                .name("definitely-missing-openvaf"),
+                environment: [:]
+            )
+        }
+    }
+
+    @Test("PATH lookup does not search current directory when PATH is empty")
+    func pathLookupDoesNotSearchCurrentDirectoryWhenPATHIsEmpty() throws {
+        #expect(throws: OpenVAFError.executableNotFound(
+            name: "definitely-missing-openvaf",
+            searchedPaths: []
+        )) {
+            try PATHOpenVAFExecutableResolver().resolve(
+                .name("definitely-missing-openvaf"),
+                environment: ["PATH": ""]
+            )
+        }
+    }
+
     @Test("Path lookup rejects non-executable file")
     func pathLookupRejectsNonExecutableFile() throws {
         let sandbox = try TemporaryDirectory(name: "resolver-not-executable")

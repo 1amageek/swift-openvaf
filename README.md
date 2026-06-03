@@ -42,7 +42,7 @@ Add `OpenVAFSupport` as a SwiftPM dependency.
 ```swift
 .package(
     url: "https://github.com/1amageek/swift-openvaf.git",
-    from: "0.3.7"
+    from: "0.3.8"
 )
 ```
 
@@ -73,6 +73,7 @@ flowchart TD
 ```
 
 Set `OPENVAF_BIN` when `openvaf` is not available on `PATH`.
+When `PATH` is missing or empty, discovery does not fall back to the current directory. Empty components inside an explicitly provided `PATH` still represent the current directory.
 
 ```bash
 export OPENVAF_BIN=/path/to/openvaf

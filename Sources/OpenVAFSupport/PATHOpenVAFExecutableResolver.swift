@@ -49,7 +49,9 @@ package struct PATHOpenVAFExecutableResolver: OpenVAFExecutableResolving {
     }
 
     private func searchPaths(from environment: [String: String]) -> [String] {
-        let path = environment["PATH"] ?? ""
+        guard let path = environment["PATH"], !path.isEmpty else {
+            return []
+        }
         return path
             .split(separator: ":", omittingEmptySubsequences: false)
             .map { component in
