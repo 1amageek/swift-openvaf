@@ -1142,9 +1142,14 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             }
 
             let resolvedURL = url.resolvingSymlinksInPath()
-            let values = try resolvedURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            let values = try resolvedURL.resourceValues(forKeys: [
+                .isRegularFileKey,
+                .fileSizeKey,
+                .linkCountKey,
+            ])
             guard values.isRegularFile == true,
-                  let fileSize = values.fileSize else {
+                  let fileSize = values.fileSize,
+                  values.linkCount == 1 else {
                 return false
             }
             return fileSize > 0

@@ -4,6 +4,13 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.7.6 - 2026-06-04
+
+### Fixed
+
+- Reject hard-linked OSDI outputs so successful compilation artifacts must be newly produced, non-shared regular files in the staged working directory.
+- Update SwiftPM installation guidance to start from 0.7.6.
+
 ## 0.7.5 - 2026-06-04
 
 ### Fixed

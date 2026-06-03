@@ -2502,6 +2502,60 @@ module model; endmodule
         #expect(FileManager.default.fileExists(atPath: externalOutputURL.path))
     }
 
+    @Test("Compile fails when OSDI output is a hard link")
+    func compileFailsWhenOutputIsHardLink() async throws {
+        let sandbox = try TemporaryDirectory(name: "output-hard-link")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("hard_link.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        let externalOutputURL = sandbox.url.appendingPathComponent("external.osdi")
+        try "module hard_link; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try Data("external-osdi".utf8).write(to: externalOutputURL)
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            let outputURL = command.workingDirectory.appendingPathComponent("hard_link.osdi")
+            try FileManager.default.linkItem(at: externalOutputURL, to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "ok",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: runner
+        )
+
+        do {
+            _ = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+            Issue.record("Expected hard-link output error")
+        } catch let error {
+            switch error {
+            case .outputMissing(let failure):
+                #expect(failure.outputURL.lastPathComponent == "hard_link.osdi")
+                #expect(failure.exitCode == 0)
+            default:
+                Issue.record("Expected missing output error, got \(error)")
+            }
+        }
+        #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
+        #expect(FileManager.default.fileExists(atPath: externalOutputURL.path))
+    }
+
     @Test("Compile fails when OSDI output is empty")
     func compileFailsWhenOutputIsEmpty() async throws {
         let sandbox = try TemporaryDirectory(name: "output-empty")
