@@ -23,6 +23,25 @@ struct FoundationOpenVAFProcessRunnerTests {
         #expect(result.standardError == "err")
     }
 
+    @Test("Run provides EOF on standard input")
+    func runProvidesEOFOnStandardInput() async throws {
+        let runner = FoundationOpenVAFProcessRunner()
+        let command = OpenVAFProcessCommand(
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "if IFS= read -r line; then printf 'input:%s' \"$line\"; else printf eof; fi"],
+            environment: nil,
+            workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            timeout: .seconds(5),
+            terminationGrace: .milliseconds(10)
+        )
+
+        let result = try await runner.run(command)
+
+        #expect(result.exitCode == 0)
+        #expect(result.standardOutput == "eof")
+        #expect(result.standardError == "")
+    }
+
     @Test("Run preserves invalid UTF-8 output with replacement characters")
     func runPreservesInvalidUTF8OutputWithReplacementCharacters() async throws {
         let runner = FoundationOpenVAFProcessRunner()

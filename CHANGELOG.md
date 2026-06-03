@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.4.6 - 2026-06-04
+
+### Fixed
+
+- Run OpenVAF child processes with standard input connected to the null device so compiler invocations cannot inherit an interactive or blocking parent stdin.
+
 ## 0.4.5 - 2026-06-04
 
 ### Fixed

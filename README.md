@@ -42,7 +42,7 @@ Add `OpenVAFSupport` as a SwiftPM dependency.
 ```swift
 .package(
     url: "https://github.com/1amageek/swift-openvaf.git",
-    from: "0.4.5"
+    from: "0.4.6"
 )
 ```
 
@@ -261,7 +261,7 @@ The test suite covers:
 | Compiler | Availability, regular source staging, local include staging, streamed source hashing, custom output names, version caching, cleanup policy |
 | Integration | Fake `openvaf` executable through real `PATH` resolution, process execution, staging, and artifact validation |
 | Failure artifacts | Non-zero exit, timeout, cancellation, missing or invalid output |
-| Process runner | stdout/stderr capture, large output drain, inherited pipe handles, invalid UTF-8, launch failure, timeout, cancellation |
+| Process runner | stdout/stderr capture, stdin EOF isolation, large output drain, inherited pipe handles, invalid UTF-8, launch failure, timeout, cancellation |
 | End-to-end | Real OpenVAF Verilog-A to OSDI compile when a compatible OpenVAF executable is available |
 
 Swift Testing suites use explicit `timeLimit` traits to guard against hangs.

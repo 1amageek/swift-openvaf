@@ -18,6 +18,7 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
         let errorPipe = Pipe()
         process.standardOutput = outputPipe
         process.standardError = errorPipe
+        process.standardInput = FileHandle.nullDevice
 
         let executablePath = command.executableURL.path
         let timeout = command.timeout
