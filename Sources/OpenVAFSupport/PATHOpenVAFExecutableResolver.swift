@@ -36,7 +36,7 @@ package struct PATHOpenVAFExecutableResolver: OpenVAFExecutableResolving {
     }
 
     private func resolve(name: String, environment: [String: String]) throws(OpenVAFError) -> URL {
-        try validateExecutableName(name)
+        try OpenVAFExecutableNameValidator.validate(name)
 
         let searchedPaths = searchPaths(from: environment)
         for directory in searchedPaths {
@@ -74,20 +74,6 @@ package struct PATHOpenVAFExecutableResolver: OpenVAFExecutableResolving {
             return values.isRegularFile == true
         } catch {
             return false
-        }
-    }
-
-    private func validateExecutableName(_ name: String) throws(OpenVAFError) {
-        guard !name.isEmpty else {
-            throw .invalidExecutableName(name, message: "Name must not be empty")
-        }
-
-        guard name != "." && name != ".." else {
-            throw .invalidExecutableName(name, message: "Name must not be a relative path marker")
-        }
-
-        guard name == URL(fileURLWithPath: name).lastPathComponent else {
-            throw .invalidExecutableName(name, message: "Name must not contain path components")
         }
     }
 }

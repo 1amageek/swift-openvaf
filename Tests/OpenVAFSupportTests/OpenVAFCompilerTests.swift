@@ -2034,6 +2034,48 @@ module model; endmodule
         #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
     }
 
+    @Test("Compile rejects invalid executable name before reading source")
+    func compileRejectsInvalidExecutableNameBeforeReadingSource() async throws {
+        let sandbox = try TemporaryDirectory(name: "invalid-executable-name-before-source")
+        defer { sandbox.remove() }
+
+        let missingSourceURL = sandbox.url.appendingPathComponent("missing.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
+            executable: .name("../openvaf"),
+            processEnvironment: ["PATH": sandbox.url.path]
+        ))
+
+        await #expect(throws: OpenVAFError.invalidExecutableName(
+            "../openvaf",
+            message: "Name must not contain path components"
+        )) {
+            try await compiler.compile(sourceAt: missingSourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
+    @Test("Compile rejects invalid executable fallback name before reading source")
+    func compileRejectsInvalidExecutableFallbackNameBeforeReadingSource() async throws {
+        let sandbox = try TemporaryDirectory(name: "invalid-executable-fallback-before-source")
+        defer { sandbox.remove() }
+
+        let missingSourceURL = sandbox.url.appendingPathComponent("missing.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
+            executable: .environment(variable: "OPENVAF_BIN", fallbackName: "sub/openvaf"),
+            processEnvironment: ["PATH": sandbox.url.path]
+        ))
+
+        await #expect(throws: OpenVAFError.invalidExecutableName(
+            "sub/openvaf",
+            message: "Name must not contain path components"
+        )) {
+            try await compiler.compile(sourceAt: missingSourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
     @Test("Compile rejects invalid configuration before staging")
     func compileRejectsInvalidConfigurationBeforeStaging() async throws {
         let sandbox = try TemporaryDirectory(name: "invalid-compile-configuration")

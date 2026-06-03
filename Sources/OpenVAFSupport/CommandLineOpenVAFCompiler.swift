@@ -272,6 +272,8 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                     message: "Executable fallback name must not contain NUL"
                 )
             }
+
+            try OpenVAFExecutableNameValidator.validate(fallbackName)
         case .path(let path):
             guard !containsNUL(path) else {
                 throw .invalidConfiguration(
@@ -286,6 +288,8 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                     message: "Executable name must not contain NUL"
                 )
             }
+
+            try OpenVAFExecutableNameValidator.validate(name)
         }
     }
 

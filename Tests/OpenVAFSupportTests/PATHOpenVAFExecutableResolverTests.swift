@@ -64,6 +64,19 @@ struct PATHOpenVAFExecutableResolverTests {
         #expect(FileManager.default.fileExists(atPath: escapedExecutable.path))
     }
 
+    @Test("PATH lookup rejects names containing NUL")
+    func pathLookupRejectsNamesContainingNUL() throws {
+        #expect(throws: OpenVAFError.invalidExecutableName(
+            "openvaf\0",
+            message: "Name must not contain NUL"
+        )) {
+            try PATHOpenVAFExecutableResolver().resolve(
+                .name("openvaf\0"),
+                environment: ["PATH": "/missing"]
+            )
+        }
+    }
+
     @Test("Environment fallback rejects invalid executable name")
     func environmentFallbackRejectsInvalidExecutableName() throws {
         let sandbox = try TemporaryDirectory(name: "resolver-invalid-fallback")

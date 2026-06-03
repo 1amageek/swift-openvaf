@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.6.1 - 2026-06-04
+
+### Fixed
+
+- Validate executable names and environment fallback names before reading compilation inputs, so invalid executable configuration fails deterministically before source validation or include scanning.
+
 ## 0.6.0 - 2026-06-04
 
 ### Changed
