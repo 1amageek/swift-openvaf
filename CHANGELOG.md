@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.6.6 - 2026-06-04
+
+### Fixed
+
+- Build test targets during CI before running tests with `--skip-build`, so the test timeout measures test execution instead of test target compilation time.
+
 ## 0.6.5 - 2026-06-04
 
 ### Fixed

@@ -53,7 +53,7 @@ jobs:
           rm -rf "$cleanup_dir"
 
       - name: Build
-        run: swift build
+        run: scripts/swift-test-timeout.sh 60 swift build --build-tests
 
       - name: Test
-        run: scripts/swift-test-timeout.sh 30 swift test
+        run: scripts/swift-test-timeout.sh 30 swift test --skip-build
