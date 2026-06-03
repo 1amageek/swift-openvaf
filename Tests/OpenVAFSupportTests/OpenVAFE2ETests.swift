@@ -5,7 +5,8 @@ import Testing
 @Suite("OpenVAF end-to-end", .timeLimit(.minutes(2)))
 struct OpenVAFE2ETests {
     private static let environment = ProcessInfo.processInfo.environment
-    private static let executableURL = locateExecutable(environment: environment)
+    private static let executableLocation = locateExecutable(environment: environment)
+    private static let executableURL = executableLocation.url
     private static let isExplicitlyRequested = environment["OPENVAF_E2E"] == "1"
     private static let isEnabled = isExplicitlyRequested || executableURL != nil
 
@@ -16,7 +17,7 @@ struct OpenVAFE2ETests {
     func compilesRealVerilogASourceIntoOSDI() async throws {
         let executableURL = try #require(
             Self.executableURL,
-            "OPENVAF_E2E=1 requires OPENVAF_BIN or openvaf on PATH"
+            "OPENVAF_E2E=1 requires OPENVAF_BIN or openvaf on PATH. \(Self.executableLocation.failureMessage)"
         )
 
         let sandbox = try E2ETemporaryDirectory(name: "openvaf-e2e")
@@ -54,14 +55,15 @@ struct OpenVAFE2ETests {
         #expect(fileSize.intValue > 0)
     }
 
-    private static func locateExecutable(environment: [String: String]) -> URL? {
+    private static func locateExecutable(environment: [String: String]) -> ExecutableLocation {
         do {
-            return try PATHOpenVAFExecutableResolver().resolve(
+            let url = try PATHOpenVAFExecutableResolver().resolve(
                 .environment(variable: "OPENVAF_BIN", fallbackName: "openvaf"),
                 environment: environment
             )
+            return .resolved(url)
         } catch {
-            return nil
+            return .failed(error)
         }
     }
 
@@ -79,6 +81,29 @@ module resistor(p, n);
     end
 endmodule
 """
+}
+
+private enum ExecutableLocation: Sendable {
+    case resolved(URL)
+    case failed(OpenVAFError)
+
+    var url: URL? {
+        switch self {
+        case .resolved(let url):
+            return url
+        case .failed:
+            return nil
+        }
+    }
+
+    var failureMessage: String {
+        switch self {
+        case .resolved:
+            return ""
+        case .failed(let error):
+            return error.localizedDescription
+        }
+    }
 }
 
 private struct E2ETemporaryDirectory {

@@ -2,6 +2,7 @@ import Foundation
 
 /// Typed errors emitted by OpenVAFSupport.
 public enum OpenVAFError: Error, Sendable, Equatable {
+    case invalidConfiguration(field: String, message: String)
     case executableNotFound(name: String, searchedPaths: [String])
     case invalidExecutableName(String, message: String)
     case notExecutable(path: String)
@@ -19,6 +20,8 @@ public enum OpenVAFError: Error, Sendable, Equatable {
 extension OpenVAFError: LocalizedError {
     public var errorDescription: String? {
         switch self {
+        case .invalidConfiguration(let field, let message):
+            return "Invalid OpenVAF configuration for \(field): \(message)"
         case .executableNotFound(let name, let searchedPaths):
             return "OpenVAF executable '\(name)' was not found on PATH: \(searchedPaths.joined(separator: ":"))"
         case .invalidExecutableName(let name, let message):

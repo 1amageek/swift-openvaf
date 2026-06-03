@@ -108,6 +108,64 @@ struct CommandLineOpenVAFCompilerTests {
         )))
     }
 
+    @Test("Availability reports invalid configuration without launching")
+    func availabilityReportsInvalidConfigurationWithoutLaunching() async throws {
+        let runner = RecordingProcessRunner { _ in
+            Issue.record("Runner should not be called when configuration is invalid")
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(
+                availabilityTimeout: .zero,
+                processEnvironment: ["PATH": "/missing"]
+            ),
+            executableResolver: StaticExecutableResolver(url: URL(fileURLWithPath: "/tmp/openvaf")),
+            processRunner: runner
+        )
+
+        let availability = await compiler.availability()
+
+        #expect(availability == .unavailable(.invalidConfiguration(
+            field: "availabilityTimeout",
+            message: "Duration must be greater than zero"
+        )))
+    }
+
+    @Test("Availability rejects negative termination grace")
+    func availabilityRejectsNegativeTerminationGrace() async throws {
+        let runner = RecordingProcessRunner { _ in
+            Issue.record("Runner should not be called when termination grace is invalid")
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(
+                terminationGrace: .seconds(-1),
+                processEnvironment: ["PATH": "/missing"]
+            ),
+            executableResolver: StaticExecutableResolver(url: URL(fileURLWithPath: "/tmp/openvaf")),
+            processRunner: runner
+        )
+
+        let availability = await compiler.availability()
+
+        #expect(availability == .unavailable(.invalidConfiguration(
+            field: "terminationGrace",
+            message: "Duration must not be negative"
+        )))
+    }
+
     @Test("Availability maps unexpected resolver errors without trapping")
     func availabilityMapsUnexpectedResolverErrorsWithoutTrapping() async throws {
         let runner = RecordingProcessRunner { _ in
@@ -957,6 +1015,78 @@ struct CommandLineOpenVAFCompilerTests {
         await #expect(throws: OpenVAFError.invalidExecutableName(
             "../openvaf",
             message: "Name must not contain path components"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
+    @Test("Compile rejects invalid configuration before staging")
+    func compileRejectsInvalidConfigurationBeforeStaging() async throws {
+        let sandbox = try TemporaryDirectory(name: "invalid-compile-configuration")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(
+                compileTimeout: .zero,
+                processEnvironment: ["PATH": sandbox.url.path]
+            ),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when configuration is invalid")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.invalidConfiguration(
+            field: "compileTimeout",
+            message: "Duration must be greater than zero"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
+    @Test("Compile rejects invalid environment variable configuration")
+    func compileRejectsInvalidEnvironmentVariableConfiguration() async throws {
+        let sandbox = try TemporaryDirectory(name: "invalid-environment-variable-configuration")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(
+                executable: .environment(variable: "", fallbackName: "openvaf"),
+                processEnvironment: ["PATH": sandbox.url.path]
+            ),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when configuration is invalid")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.invalidConfiguration(
+            field: "executable.variable",
+            message: "Environment variable name must not be empty"
         )) {
             try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
         }

@@ -30,6 +30,12 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
     }
 
     public func availability() async -> OpenVAFAvailability {
+        do {
+            try validateConfiguration(for: .availability)
+        } catch {
+            return .unavailable(unavailableReason(from: error))
+        }
+
         let environment = effectiveEnvironment()
         let executableURL: URL
 
@@ -84,6 +90,8 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
     }
 
     public func compile(_ request: OpenVAFCompilationRequest) async throws(OpenVAFError) -> OpenVAFCompilationArtifact {
+        try validateConfiguration(for: .compile)
+
         let environment = effectiveEnvironment()
         let source = try validate(request)
         let executableURL = try executableResolver.resolve(configuration.executable, environment: environment)
@@ -178,6 +186,75 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         let stagedSourceFileName: String
         let outputDirectory: URL
         let outputFileName: String
+    }
+
+    private enum ConfigurationUse {
+        case availability
+        case compile
+    }
+
+    private func validateConfiguration(for use: ConfigurationUse) throws(OpenVAFError) {
+        try validateExecutableConfiguration(configuration.executable)
+        try validatePositiveDuration(
+            configuration.availabilityTimeout,
+            field: "availabilityTimeout"
+        )
+        try validateNonNegativeDuration(
+            configuration.terminationGrace,
+            field: "terminationGrace"
+        )
+
+        if use == .compile {
+            try validatePositiveDuration(
+                configuration.compileTimeout,
+                field: "compileTimeout"
+            )
+        }
+    }
+
+    private func validateExecutableConfiguration(_ executable: OpenVAFExecutable) throws(OpenVAFError) {
+        switch executable {
+        case .environment(let variable, _):
+            guard !variable.isEmpty else {
+                throw .invalidConfiguration(
+                    field: "executable.variable",
+                    message: "Environment variable name must not be empty"
+                )
+            }
+
+            guard !variable.contains("=") else {
+                throw .invalidConfiguration(
+                    field: "executable.variable",
+                    message: "Environment variable name must not contain '='"
+                )
+            }
+        case .path, .name:
+            return
+        }
+    }
+
+    private func validatePositiveDuration(
+        _ duration: Duration,
+        field: String
+    ) throws(OpenVAFError) {
+        guard duration > .zero else {
+            throw .invalidConfiguration(
+                field: field,
+                message: "Duration must be greater than zero"
+            )
+        }
+    }
+
+    private func validateNonNegativeDuration(
+        _ duration: Duration,
+        field: String
+    ) throws(OpenVAFError) {
+        guard duration >= .zero else {
+            throw .invalidConfiguration(
+                field: field,
+                message: "Duration must not be negative"
+            )
+        }
     }
 
     private func validate(_ request: OpenVAFCompilationRequest) throws(OpenVAFError) -> ValidatedSource {
@@ -545,6 +622,8 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
 
     private func unavailableReason(from error: OpenVAFError) -> OpenVAFUnavailableReason {
         switch error {
+        case .invalidConfiguration(let field, let message):
+            return .invalidConfiguration(field: field, message: message)
         case .executableNotFound(let name, let searchedPaths):
             return .executableNotFound(name: name, searchedPaths: searchedPaths)
         case .invalidExecutableName(let name, let message):
