@@ -166,6 +166,32 @@ struct CommandLineOpenVAFCompilerTests {
         )))
     }
 
+    @Test("Availability rejects invalid explicit environment without launching")
+    func availabilityRejectsInvalidExplicitEnvironmentWithoutLaunching() async throws {
+        let runner = RecordingProcessRunner { _ in
+            Issue.record("Runner should not be called when environment is invalid")
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["": "value"]),
+            executableResolver: StaticExecutableResolver(url: URL(fileURLWithPath: "/tmp/openvaf")),
+            processRunner: runner
+        )
+
+        let availability = await compiler.availability()
+
+        #expect(availability == .unavailable(.invalidConfiguration(
+            field: "processEnvironment",
+            message: "Environment variable names must not be empty"
+        )))
+    }
+
     @Test("Availability maps unexpected resolver errors without trapping")
     func availabilityMapsUnexpectedResolverErrorsWithoutTrapping() async throws {
         let runner = RecordingProcessRunner { _ in
@@ -266,6 +292,62 @@ struct CommandLineOpenVAFCompilerTests {
         #expect(isSHA256Hex(artifact.command.environment.valueSHA256))
         #expect(FileManager.default.fileExists(atPath: artifact.stagedSourceURL.path))
         #expect(FileManager.default.fileExists(atPath: artifact.outputURL.path))
+    }
+
+    @Test("Compile fingerprints explicit environment without delimiter collisions")
+    func compileFingerprintsExplicitEnvironmentWithoutDelimiterCollisions() async throws {
+        let sandbox = try TemporaryDirectory(name: "environment-fingerprint")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("env.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module env; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let executableURL = sandbox.url.appendingPathComponent("openvaf")
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            let outputURL = command.workingDirectory.appendingPathComponent("env.osdi")
+            try Data("osdi".utf8).write(to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+
+        func compile(environment: [String: String]) async throws -> OpenVAFCompilationArtifact {
+            let compiler = CommandLineOpenVAFCompiler(
+                configuration: OpenVAFConfiguration(processEnvironment: environment),
+                executableResolver: StaticExecutableResolver(url: executableURL),
+                processRunner: runner
+            )
+            return try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+
+        let first = try await compile(environment: [
+            "A": "B\nC=D",
+            "PATH": sandbox.url.path,
+        ])
+        let second = try await compile(environment: [
+            "A": "B",
+            "C": "D",
+            "PATH": sandbox.url.path,
+        ])
+
+        #expect(Set(first.command.environment.keys) == Set(["A", "PATH"]))
+        #expect(Set(second.command.environment.keys) == Set(["A", "C", "PATH"]))
+        #expect(first.command.environment.valueSHA256 != second.command.environment.valueSHA256)
     }
 
     @Test("Compile records only relevant inherited environment metadata")
@@ -1087,6 +1169,42 @@ struct CommandLineOpenVAFCompilerTests {
         await #expect(throws: OpenVAFError.invalidConfiguration(
             field: "executable.variable",
             message: "Environment variable name must not be empty"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
+    @Test("Compile rejects NUL in compiler arguments before staging")
+    func compileRejectsNULInCompilerArgumentsBeforeStaging() async throws {
+        let sandbox = try TemporaryDirectory(name: "invalid-compiler-argument")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(
+                processEnvironment: ["PATH": sandbox.url.path],
+                compilerArguments: ["--flag\0value"]
+            ),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when compiler arguments are invalid")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.invalidConfiguration(
+            field: "compilerArguments[0]",
+            message: "Argument must not contain NUL"
         )) {
             try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
         }

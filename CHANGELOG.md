@@ -23,6 +23,8 @@ All notable changes to this package will be documented in this file.
 - Treat missing, directory, and empty OSDI outputs as failed outputs instead of successful artifacts.
 - Preserve primary compile errors when failed working directory cleanup also fails.
 - Terminate the full test command process group on timeout and after command completion to avoid stale child processes.
+- Validate explicit process environment and compiler arguments before launching OpenVAF.
+- Encode environment fingerprints with length-prefixed key/value data to avoid delimiter collisions.
 - Add CI smoke coverage for the repository timeout helper.
 
 ## 0.1.0 - 2026-06-03

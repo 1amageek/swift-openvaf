@@ -34,7 +34,7 @@ struct OpenVAFE2ETests {
         ))
 
         let availability = await compiler.availability()
-        #expect(availability.isAvailable)
+        try #require(availability.isAvailable, "OpenVAF availability failed: \(availability)")
 
         let artifact = try await compiler.compile(OpenVAFCompilationRequest(
             sourceURL: sourceURL,

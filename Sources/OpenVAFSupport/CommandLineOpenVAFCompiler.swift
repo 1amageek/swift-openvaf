@@ -195,6 +195,9 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
 
     private func validateConfiguration(for use: ConfigurationUse) throws(OpenVAFError) {
         try validateExecutableConfiguration(configuration.executable)
+        if let processEnvironment = configuration.processEnvironment {
+            try validateProcessEnvironment(processEnvironment)
+        }
         try validatePositiveDuration(
             configuration.availabilityTimeout,
             field: "availabilityTimeout"
@@ -209,12 +212,13 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 configuration.compileTimeout,
                 field: "compileTimeout"
             )
+            try validateCompilerArguments(configuration.compilerArguments)
         }
     }
 
     private func validateExecutableConfiguration(_ executable: OpenVAFExecutable) throws(OpenVAFError) {
         switch executable {
-        case .environment(let variable, _):
+        case .environment(let variable, let fallbackName):
             guard !variable.isEmpty else {
                 throw .invalidConfiguration(
                     field: "executable.variable",
@@ -228,9 +232,82 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                     message: "Environment variable name must not contain '='"
                 )
             }
-        case .path, .name:
-            return
+
+            guard !containsNUL(variable) else {
+                throw .invalidConfiguration(
+                    field: "executable.variable",
+                    message: "Environment variable name must not contain NUL"
+                )
+            }
+
+            guard !containsNUL(fallbackName) else {
+                throw .invalidConfiguration(
+                    field: "executable.fallbackName",
+                    message: "Executable fallback name must not contain NUL"
+                )
+            }
+        case .path(let path):
+            guard !containsNUL(path) else {
+                throw .invalidConfiguration(
+                    field: "executable.path",
+                    message: "Executable path must not contain NUL"
+                )
+            }
+        case .name(let name):
+            guard !containsNUL(name) else {
+                throw .invalidConfiguration(
+                    field: "executable.name",
+                    message: "Executable name must not contain NUL"
+                )
+            }
         }
+    }
+
+    private func validateProcessEnvironment(_ environment: [String: String]) throws(OpenVAFError) {
+        for (key, value) in environment {
+            guard !key.isEmpty else {
+                throw .invalidConfiguration(
+                    field: "processEnvironment",
+                    message: "Environment variable names must not be empty"
+                )
+            }
+
+            guard !key.contains("=") else {
+                throw .invalidConfiguration(
+                    field: "processEnvironment",
+                    message: "Environment variable names must not contain '='"
+                )
+            }
+
+            guard !containsNUL(key) else {
+                throw .invalidConfiguration(
+                    field: "processEnvironment",
+                    message: "Environment variable names must not contain NUL"
+                )
+            }
+
+            guard !containsNUL(value) else {
+                throw .invalidConfiguration(
+                    field: "processEnvironment.\(key)",
+                    message: "Environment variable values must not contain NUL"
+                )
+            }
+        }
+    }
+
+    private func validateCompilerArguments(_ arguments: [String]) throws(OpenVAFError) {
+        for (index, argument) in arguments.enumerated() {
+            guard !containsNUL(argument) else {
+                throw .invalidConfiguration(
+                    field: "compilerArguments[\(index)]",
+                    message: "Argument must not contain NUL"
+                )
+            }
+        }
+    }
+
+    private func containsNUL(_ value: String) -> Bool {
+        value.contains("\0")
     }
 
     private func validatePositiveDuration(
@@ -451,11 +528,21 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
     }
 
     private func sha256HexDigest(of environment: [String: String]) -> String {
-        let payload = environment.keys.sorted().map { key in
-            "\(key)=\(environment[key] ?? "")"
-        }.joined(separator: "\n")
-        let digest = SHA256.hash(data: Data(payload.utf8))
-        return sha256HexDigest(of: digest)
+        var hasher = SHA256()
+        for key in environment.keys.sorted() {
+            updateSHA256(&hasher, withLengthPrefixed: key)
+            updateSHA256(&hasher, withLengthPrefixed: environment[key] ?? "")
+        }
+        return sha256HexDigest(of: hasher.finalize())
+    }
+
+    private func updateSHA256(_ hasher: inout SHA256, withLengthPrefixed value: String) {
+        let data = Data(value.utf8)
+        var byteCount = UInt64(data.count).bigEndian
+        withUnsafeBytes(of: &byteCount) { buffer in
+            hasher.update(bufferPointer: buffer)
+        }
+        hasher.update(data: data)
     }
 
     private func sha256HexDigest<Digest: Sequence>(of digest: Digest) -> String where Digest.Element == UInt8 {

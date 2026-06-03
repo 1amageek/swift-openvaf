@@ -203,13 +203,13 @@ let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
 | `compilerArguments` | `[]` | Extra arguments passed before the staged source name |
 | `keepsFailedWorkingDirectories` | `false` | Preserves failed staging directories when enabled |
 
-`compileTimeout` and `availabilityTimeout` must be greater than zero. `terminationGrace` must not be negative. Invalid configuration is reported as a typed error before staging or launching a process.
+`compileTimeout` and `availabilityTimeout` must be greater than zero. `terminationGrace` must not be negative. Explicit environment keys and compiler arguments must be representable at the POSIX process boundary. Invalid configuration is reported as a typed error before staging or launching a process.
 
 ## Error Model
 
 | Error | When it occurs |
 |---|---|
-| `invalidConfiguration` | A timeout, termination grace, or executable environment variable setting is invalid |
+| `invalidConfiguration` | A timeout, termination grace, executable setting, explicit environment, or compiler argument is invalid |
 | `executableNotFound` | No configured executable can be found |
 | `invalidExecutableName` | An executable name contains path components or is not a plain file name |
 | `notExecutable` | The resolved file is not executable |
