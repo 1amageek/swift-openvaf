@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import Testing
 @testable import OpenVAFSupport
 
@@ -290,6 +291,58 @@ struct CommandLineOpenVAFCompilerTests {
         #expect(FileManager.default.fileExists(atPath: artifact.outputURL.path))
     }
 
+    @Test("Compile stages symlink source contents")
+    func compileStagesSymlinkSourceContents() async throws {
+        let sandbox = try TemporaryDirectory(name: "symlink-source")
+        defer { sandbox.remove() }
+
+        let targetSourceURL = sandbox.url.appendingPathComponent("target.va")
+        let sourceURL = sandbox.url.appendingPathComponent("linked.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module linked; endmodule\n".write(to: targetSourceURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: sourceURL, withDestinationURL: targetSourceURL)
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            let stagedSourceURL = command.workingDirectory.appendingPathComponent("linked.va")
+            let values = try stagedSourceURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            #expect(values.isRegularFile == true)
+            #expect(values.isSymbolicLink != true)
+            let stagedSource = try String(contentsOf: stagedSourceURL, encoding: .utf8)
+            #expect(stagedSource == "module linked; endmodule\n")
+
+            let outputURL = command.workingDirectory.appendingPathComponent("linked.osdi")
+            try Data("osdi".utf8).write(to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: runner
+        )
+
+        let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+
+        #expect(artifact.sourceURL == sourceURL)
+        #expect(artifact.stagedSourceURL.lastPathComponent == "linked.va")
+        #expect(artifact.outputURL.lastPathComponent == "linked.osdi")
+    }
+
     @Test("Compile hashes source larger than digest chunk")
     func compileHashesSourceLargerThanDigestChunk() async throws {
         let sandbox = try TemporaryDirectory(name: "large-source-hash")
@@ -330,6 +383,40 @@ struct CommandLineOpenVAFCompilerTests {
 
         #expect(artifact.sourceSHA256 == "b44ffb72fcc259676bd80495fef1b44b808ca8f1ffe1b1706a4d7911b0e31f11")
         #expect(FileManager.default.fileExists(atPath: artifact.outputURL.path))
+    }
+
+    @Test("Compile rejects non-regular source files")
+    func compileRejectsNonRegularSourceFiles() async throws {
+        let sandbox = try TemporaryDirectory(name: "non-regular-source")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("pipe.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try createFIFO(at: sourceURL)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when source is not regular")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "read source",
+            path: sourceURL.path,
+            message: "Source must be a regular file"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
     }
 
     @Test("Compile maps non-zero OpenVAF exit")
@@ -621,6 +708,108 @@ struct CommandLineOpenVAFCompilerTests {
                 #expect(failure.outputURL.deletingLastPathComponent().path.hasPrefix(outputDirectory.path))
                 #expect(failure.standardOutput == "ok")
                 #expect(failure.standardError == "")
+                #expect(failure.exitCode == 0)
+            default:
+                Issue.record("Expected missing output error, got \(error)")
+            }
+        }
+        #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
+    }
+
+    @Test("Compile fails when OSDI output is a directory")
+    func compileFailsWhenOutputIsDirectory() async throws {
+        let sandbox = try TemporaryDirectory(name: "output-directory")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("directory.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module directory; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            let outputURL = command.workingDirectory.appendingPathComponent("directory.osdi")
+            try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "ok",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: runner
+        )
+
+        do {
+            _ = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+            Issue.record("Expected invalid output error")
+        } catch let error {
+            switch error {
+            case .outputMissing(let failure):
+                #expect(failure.outputURL.lastPathComponent == "directory.osdi")
+                #expect(failure.exitCode == 0)
+            default:
+                Issue.record("Expected missing output error, got \(error)")
+            }
+        }
+        #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
+    }
+
+    @Test("Compile fails when OSDI output is empty")
+    func compileFailsWhenOutputIsEmpty() async throws {
+        let sandbox = try TemporaryDirectory(name: "output-empty")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("empty.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module empty; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            let outputURL = command.workingDirectory.appendingPathComponent("empty.osdi")
+            try Data().write(to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "ok",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: runner
+        )
+
+        do {
+            _ = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+            Issue.record("Expected invalid output error")
+        } catch let error {
+            switch error {
+            case .outputMissing(let failure):
+                #expect(failure.outputURL.lastPathComponent == "empty.osdi")
                 #expect(failure.exitCode == 0)
             default:
                 Issue.record("Expected missing output error, got \(error)")
@@ -940,6 +1129,13 @@ private func restoreWritablePermissions(at url: URL) {
         }
     } catch {
         Issue.record("Failed to restore writable permissions for \(url.path): \(error)")
+    }
+}
+
+private func createFIFO(at url: URL) throws {
+    guard mkfifo(url.path, 0o644) == 0 else {
+        let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+        throw POSIXError(code)
     }
 }
 

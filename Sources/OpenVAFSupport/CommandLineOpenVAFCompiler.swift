@@ -122,7 +122,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 ))
             }
 
-            guard FileManager.default.fileExists(atPath: prepared.outputURL.path) else {
+            guard isValidOutputFile(at: prepared.outputURL) else {
                 throw OpenVAFError.outputMissing(compilationFailure(
                     prepared: prepared,
                     command: commandRecord,
@@ -226,6 +226,14 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             )
         }
 
+        guard isRegularFile(at: sourceURL) else {
+            throw .fileSystemFailure(
+                operation: "read source",
+                path: sourceURL.path,
+                message: "Source must be a regular file"
+            )
+        }
+
         return ValidatedSource(
             sourceURL: sourceURL,
             stagedSourceFileName: stagedSourceFileName(
@@ -254,7 +262,10 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         }
 
         do {
-            try fileManager.copyItem(at: source.sourceURL, to: stagedSourceURL)
+            try fileManager.copyItem(
+                at: source.sourceURL.resolvingSymlinksInPath(),
+                to: stagedSourceURL
+            )
         } catch {
             cleanupFailedWorkingDirectory(workingDirectory)
             throw .fileSystemFailure(
@@ -437,6 +448,36 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             }
         } catch {
             // Preserve the primary compile failure. Cleanup failure is secondary.
+        }
+    }
+
+    private func isRegularFile(at url: URL) -> Bool {
+        do {
+            let resolvedURL = url.resolvingSymlinksInPath()
+            let values = try resolvedURL.resourceValues(forKeys: [.isRegularFileKey])
+            return values.isRegularFile == true
+        } catch {
+            return false
+        }
+    }
+
+    private func isValidOutputFile(at url: URL) -> Bool {
+        var isDirectory = ObjCBool(false)
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else {
+            return false
+        }
+
+        do {
+            let resolvedURL = url.resolvingSymlinksInPath()
+            let values = try resolvedURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            guard values.isRegularFile == true,
+                  let fileSize = values.fileSize else {
+                return false
+            }
+            return fileSize > 0
+        } catch {
+            return false
         }
     }
 

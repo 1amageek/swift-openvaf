@@ -18,6 +18,8 @@ All notable changes to this package will be documented in this file.
 - Run CI tests through the repository timeout script so hangs fail explicitly.
 - Validate OpenVAF executable candidates as regular executable files, while preserving executable symlink support.
 - Stream source hashing instead of loading the full source into memory.
+- Stage symlinked sources as regular file contents and reject non-regular source inputs.
+- Treat missing, directory, and empty OSDI outputs as failed outputs instead of successful artifacts.
 - Preserve primary compile errors when failed working directory cleanup also fails.
 
 ## 0.1.0 - 2026-06-03
