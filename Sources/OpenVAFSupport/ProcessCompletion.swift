@@ -8,10 +8,24 @@ package enum ProcessCompletion: Sendable {
     case cancelled
 }
 
-package enum ProcessExitReason: Sendable {
-    case exit
-    case uncaughtSignal
-    case unknown
+package final class ProcessExitState: Sendable {
+    private let exitStatus = Mutex<Int32?>(nil)
+
+    package init() {}
+
+    package func record(status: Int32) -> Int32 {
+        exitStatus.withLock { state in
+            if let state {
+                return state
+            }
+            state = status
+            return status
+        }
+    }
+
+    package func recordedStatus() -> Int32? {
+        exitStatus.withLock { $0 }
+    }
 }
 
 package enum ProcessTerminationRequest: Sendable {
@@ -124,7 +138,6 @@ package actor ProcessRunCoordinator {
     private var didFinishOutput = false
     private var didFinishError = false
     private var exitCode: Int32?
-    private var exitReason: ProcessExitReason?
     private var terminationRequest: ProcessTerminationRequest?
     private var immediateCompletion: ProcessCompletion?
     private var continuation: CheckedContinuation<OpenVAFProcessResult, any Error>?
@@ -158,9 +171,8 @@ package actor ProcessRunCoordinator {
         finishIfReady()
     }
 
-    package func recordExit(_ status: Int32, reason: ProcessExitReason = .exit) {
+    package func recordExit(_ status: Int32) {
         exitCode = status
-        exitReason = reason
         finishIfReady()
     }
 
@@ -193,7 +205,7 @@ package actor ProcessRunCoordinator {
             return
         }
 
-        guard let exitCode, let exitReason, didFinishOutput, didFinishError else { return }
+        guard let exitCode, didFinishOutput, didFinishError else { return }
 
         self.continuation = nil
         let completion: ProcessCompletion
@@ -201,12 +213,7 @@ package actor ProcessRunCoordinator {
         case .timedOut:
             completion = .timedOut
         case .cancelled:
-            switch exitReason {
-            case .uncaughtSignal:
-                completion = .cancelled
-            case .exit, .unknown:
-                completion = .exited(exitCode)
-            }
+            completion = .cancelled
         case nil:
             completion = .exited(exitCode)
         }

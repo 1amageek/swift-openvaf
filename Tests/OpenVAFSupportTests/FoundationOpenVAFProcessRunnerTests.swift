@@ -234,6 +234,42 @@ struct FoundationOpenVAFProcessRunnerTests {
         }
     }
 
+    @Test("Run reports cancellation when terminated process exits normally")
+    func runReportsCancellationWhenTerminatedProcessExitsNormally() async throws {
+        let runner = FoundationOpenVAFProcessRunner()
+        let command = OpenVAFProcessCommand(
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "trap 'printf cancelled; exit 0' TERM; while :; do sleep 0.01; done"],
+            environment: nil,
+            workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            timeout: .seconds(30),
+            terminationGrace: .milliseconds(10)
+        )
+
+        let task = Task {
+            try await runner.run(command)
+        }
+
+        try await ContinuousClock().sleep(for: .milliseconds(50))
+        task.cancel()
+
+        do {
+            _ = try await task.value
+            Issue.record("Expected process cancellation")
+        } catch let error as OpenVAFProcessError {
+            switch error {
+            case .cancelled(let executablePath, let standardOutput, _, let startedAt, let finishedAt):
+                #expect(executablePath == "/bin/sh")
+                #expect(standardOutput.contains("cancelled"))
+                #expect(finishedAt >= startedAt)
+            case .launchFailed, .timedOut:
+                Issue.record("Expected cancellation, got \(error)")
+            }
+        } catch {
+            Issue.record("Expected OpenVAFProcessError, got \(error)")
+        }
+    }
+
     @Test("Run ignores cancellation after the direct process already exited")
     func runIgnoresCancellationAfterTheDirectProcessAlreadyExited() async throws {
         let runner = FoundationOpenVAFProcessRunner()

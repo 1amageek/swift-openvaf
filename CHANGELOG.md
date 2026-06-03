@@ -4,6 +4,13 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.7.2 - 2026-06-04
+
+### Fixed
+
+- Preserve cancellation semantics when a terminated process handles `SIGTERM` and exits normally, while still ignoring task cancellation that arrives after the process exit has already been observed.
+- Update SwiftPM installation guidance to start from 0.7.2.
+
 ## 0.7.1 - 2026-06-04
 
 ### Fixed

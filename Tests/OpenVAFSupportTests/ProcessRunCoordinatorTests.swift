@@ -72,8 +72,8 @@ struct ProcessRunCoordinatorTests {
         #expect(result.standardOutput == "ok")
     }
 
-    @Test("Coordinator preserves normal exits after cancellation requests")
-    func coordinatorPreservesNormalExitsAfterCancellationRequests() async throws {
+    @Test("Coordinator maps normal exits after cancellation requests")
+    func coordinatorMapsNormalExitsAfterCancellationRequests() async throws {
         let coordinator = ProcessRunCoordinator(
             executablePath: "/bin/openvaf",
             timeout: .seconds(5),
@@ -81,19 +81,28 @@ struct ProcessRunCoordinatorTests {
         )
 
         await coordinator.requestTermination(.cancelled)
-        await coordinator.recordExit(2, reason: .exit)
+        await coordinator.recordExit(2)
         await coordinator.recordOutput(Data("out".utf8))
         await coordinator.recordError(Data("err".utf8))
 
-        let result = try await coordinator.waitForResult()
-
-        #expect(result.exitCode == 2)
-        #expect(result.standardOutput == "out")
-        #expect(result.standardError == "err")
+        do {
+            _ = try await coordinator.waitForResult()
+            Issue.record("Expected cancellation")
+        } catch let error as OpenVAFProcessError {
+            switch error {
+            case .cancelled(_, let standardOutput, let standardError, _, _):
+                #expect(standardOutput == "out")
+                #expect(standardError == "err")
+            case .launchFailed, .timedOut:
+                Issue.record("Expected cancellation, got \(error)")
+            }
+        } catch {
+            Issue.record("Expected OpenVAFProcessError, got \(error)")
+        }
     }
 
-    @Test("Coordinator maps signal exits after cancellation requests")
-    func coordinatorMapsSignalExitsAfterCancellationRequests() async throws {
+    @Test("Coordinator maps terminated exits after cancellation requests")
+    func coordinatorMapsTerminatedExitsAfterCancellationRequests() async throws {
         let coordinator = ProcessRunCoordinator(
             executablePath: "/bin/openvaf",
             timeout: .seconds(5),
@@ -101,7 +110,7 @@ struct ProcessRunCoordinatorTests {
         )
 
         await coordinator.requestTermination(.cancelled)
-        await coordinator.recordExit(SIGTERM, reason: .uncaughtSignal)
+        await coordinator.recordExit(SIGTERM)
         await coordinator.recordOutput(Data("partial".utf8))
         await coordinator.recordError(Data())
 
