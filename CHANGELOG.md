@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.2.5 - 2026-06-04
+
+### Changed
+
+- Clarified that official OpenVAF pre-built executables are currently Windows/Linux oriented and macOS end-to-end tests require a caller-supplied compatible executable.
+
 ## 0.2.4 - 2026-06-04
 
 ### Fixed

@@ -33,6 +33,8 @@ flowchart LR
 | External tool | OpenVAF command line executable |
 | License | BSD-3-Clause |
 
+OpenVAF's official installation documentation currently lists pre-compiled executables for Windows and Linux and states that OSX is not supported. On macOS, `OpenVAFSupport` can still wrap a caller-supplied compatible or custom-built OpenVAF executable, but real end-to-end compilation is only available when such an executable is present.
+
 ## Installation
 
 Add `OpenVAFSupport` as a SwiftPM dependency.
@@ -40,7 +42,7 @@ Add `OpenVAFSupport` as a SwiftPM dependency.
 ```swift
 .package(
     url: "https://github.com/1amageek/swift-openvaf.git",
-    from: "0.2.4"
+    from: "0.2.5"
 )
 ```
 
@@ -256,7 +258,7 @@ The test suite covers:
 | Compiler | Availability, regular source staging, local include staging, streamed source hashing, custom output names, version caching, cleanup policy |
 | Failure artifacts | Non-zero exit, timeout, cancellation, missing or invalid output |
 | Process runner | stdout/stderr capture, large output drain, inherited pipe handles, invalid UTF-8, launch failure, timeout, cancellation |
-| End-to-end | Real OpenVAF Verilog-A to OSDI compile when OpenVAF is available |
+| End-to-end | Real OpenVAF Verilog-A to OSDI compile when a compatible OpenVAF executable is available |
 
 Swift Testing suites use explicit `timeLimit` traits to guard against hangs.
 
