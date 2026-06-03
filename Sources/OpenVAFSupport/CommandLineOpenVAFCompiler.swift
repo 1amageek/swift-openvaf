@@ -54,10 +54,16 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             terminationGrace: configuration.terminationGrace
         )
 
-        return await queryInstallation(command: command)
+        return await queryInstallation(
+            command: command,
+            cacheSnapshot: installationCache.snapshot(for: executableURL)
+        )
     }
 
-    private func queryInstallation(command: OpenVAFProcessCommand) async -> OpenVAFAvailability {
+    private func queryInstallation(
+        command: OpenVAFProcessCommand,
+        cacheSnapshot: OpenVAFInstallationCache.Snapshot?
+    ) async -> OpenVAFAvailability {
         do {
             let result = try await processRunner.run(command)
             let output = [result.standardOutput, result.standardError]
@@ -77,7 +83,9 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 version: Self.parseVersion(from: output),
                 rawVersionOutput: output
             )
-            installationCache.store(installation)
+            if let cacheSnapshot {
+                installationCache.store(installation, forStable: cacheSnapshot)
+            }
             return .available(installation)
         } catch let error as OpenVAFProcessError {
             return .unavailable(unavailableReason(from: error))
@@ -882,7 +890,9 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         matching executableURL: URL,
         environment: [String: String]
     ) async -> OpenVAFInstallation? {
-        if let installation = installationCache.installation(for: executableURL) {
+        let cacheSnapshot = installationCache.snapshot(for: executableURL)
+        if let cacheSnapshot,
+           let installation = installationCache.installation(for: cacheSnapshot) {
             return installation
         }
 
@@ -894,7 +904,10 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             timeout: configuration.availabilityTimeout,
             terminationGrace: configuration.terminationGrace
         )
-        let availability = await queryInstallation(command: command)
+        let availability = await queryInstallation(
+            command: command,
+            cacheSnapshot: cacheSnapshot
+        )
         switch availability {
         case .available(let installation)
             where installation.executableURL.standardizedFileURL == executableURL.standardizedFileURL:

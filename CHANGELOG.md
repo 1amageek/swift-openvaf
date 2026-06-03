@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.3.5 - 2026-06-04
+
+### Fixed
+
+- Avoid caching OpenVAF version metadata observed while the executable file changes during the version check.
+
 ## 0.3.4 - 2026-06-04
 
 ### Fixed

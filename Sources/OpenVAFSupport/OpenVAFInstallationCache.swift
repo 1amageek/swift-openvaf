@@ -3,24 +3,32 @@ import Foundation
 import Synchronization
 
 package final class OpenVAFInstallationCache: Sendable {
+    package struct Snapshot: Sendable, Equatable {
+        fileprivate let executableURL: URL
+        fileprivate let key: String
+    }
+
     private let installations = Mutex<[String: OpenVAFInstallation]>([:])
 
     package init() {}
 
-    package func installation(for executableURL: URL) -> OpenVAFInstallation? {
-        guard let key = key(for: executableURL) else { return nil }
-        return installations.withLock { $0[key] }
+    package func snapshot(for executableURL: URL) -> Snapshot? {
+        let standardizedURL = executableURL.standardizedFileURL
+        guard let digest = digestHex(of: standardizedURL) else { return nil }
+        let key = lengthPrefixed(standardizedURL.path) + lengthPrefixed(digest)
+        return Snapshot(executableURL: standardizedURL, key: key)
     }
 
-    package func store(_ installation: OpenVAFInstallation) {
-        guard let key = key(for: installation.executableURL) else { return }
-        installations.withLock { $0[key] = installation }
+    package func installation(for snapshot: Snapshot) -> OpenVAFInstallation? {
+        installations.withLock { $0[snapshot.key] }
     }
 
-    private func key(for executableURL: URL) -> String? {
-        let path = executableURL.standardizedFileURL.path
-        guard let digest = digestHex(of: executableURL) else { return nil }
-        return lengthPrefixed(path) + lengthPrefixed(digest)
+    package func store(_ installation: OpenVAFInstallation, forStable snapshot: Snapshot) {
+        guard installation.executableURL.standardizedFileURL == snapshot.executableURL,
+              self.snapshot(for: installation.executableURL) == snapshot else {
+            return
+        }
+        installations.withLock { $0[snapshot.key] = installation }
     }
 
     private func digestHex(of executableURL: URL) -> String? {

@@ -1961,6 +1961,67 @@ module model; endmodule
         #expect(commands.filter { $0.arguments == ["--version"] }.count == 2)
     }
 
+    @Test("Compile does not cache OpenVAF version observed during executable replacement")
+    func compileDoesNotCacheOpenVAFVersionObservedDuringExecutableReplacement() async throws {
+        let sandbox = try TemporaryDirectory(name: "version-cache-replacement-race")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("race.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module race; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let executableURL = sandbox.url.appendingPathComponent("openvaf")
+        try writeExecutableMarker("first", to: executableURL)
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                let executableData = try Data(contentsOf: command.executableURL)
+                let executableText = String(decoding: executableData, as: UTF8.self)
+                if executableText.contains("first") {
+                    try writeExecutableMarker("second", to: command.executableURL)
+                    return OpenVAFProcessResult(
+                        exitCode: 0,
+                        standardOutput: "OpenVAF 1.0.0\n",
+                        standardError: "",
+                        startedAt: Date(),
+                        finishedAt: Date()
+                    )
+                }
+
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 2.0.0\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            let outputURL = command.workingDirectory.appendingPathComponent("race.osdi")
+            try Data("osdi".utf8).write(to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: executableURL),
+            processRunner: runner
+        )
+
+        let first = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        let second = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        let commands = await runner.recordedCommands()
+
+        #expect(first.openVAFVersion == "1.0.0")
+        #expect(second.openVAFVersion == "2.0.0")
+        #expect(commands.filter { $0.arguments == ["--version"] }.count == 2)
+    }
+
     @Test("Compile resolves and runs fake OpenVAF through Foundation process runner")
     func compileResolvesAndRunsFakeOpenVAFThroughFoundationProcessRunner() async throws {
         let sandbox = try TemporaryDirectory(name: "fake-openvaf")
