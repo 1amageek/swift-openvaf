@@ -73,9 +73,8 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
                 } catch {
                     return
                 }
-                guard await controller.isRunning() else { return }
+                guard await controller.terminateIfRunningOrPendingStart() else { return }
                 await coordinator.requestTermination(.timedOut)
-                await controller.terminate()
 
                 do {
                     try await ContinuousClock().sleep(for: terminationGrace)
