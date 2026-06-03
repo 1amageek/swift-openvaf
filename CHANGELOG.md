@@ -2,6 +2,13 @@
 
 All notable changes to this package will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- Optional real OpenVAF end-to-end test gated on `OPENVAF_BIN`, `PATH`, or `OPENVAF_E2E=1`.
+- README guidance for OpenVAF binary distribution and E2E testing.
+
 ## 0.1.0 - 2026-06-03
 
 ### Added

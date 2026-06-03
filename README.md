@@ -232,8 +232,27 @@ The test suite covers:
 | Compiler | Availability, staging, custom output names, version caching, cleanup policy |
 | Failure artifacts | Non-zero exit, timeout, cancellation, missing output |
 | Process runner | stdout/stderr capture, invalid UTF-8, launch failure, timeout, cancellation |
+| End-to-end | Real OpenVAF Verilog-A to OSDI compile when OpenVAF is available |
 
-Swift Testing suites use `.timeLimit(.minutes(1))` to guard against hangs.
+Swift Testing suites use explicit `timeLimit` traits to guard against hangs.
+
+End-to-end tests are gated because OpenVAF is an external tool. They run automatically when `OPENVAF_BIN` or `openvaf` on `PATH` resolves to an executable. Set `OPENVAF_E2E=1` to make the E2E test mandatory; the test will fail if OpenVAF cannot be found.
+
+```bash
+OPENVAF_BIN=/path/to/openvaf OPENVAF_E2E=1 swift test --filter OpenVAFE2ETests
+```
+
+## OpenVAF Binary Distribution
+
+`OpenVAFSupport` does not bundle an OpenVAF executable.
+
+| Reason | Impact |
+|---|---|
+| Platform availability | OpenVAF's published standalone executables target Linux and Windows; macOS is not currently supported by the upstream installation guide |
+| Licensing | OpenVAF is GPL licensed, while this Swift wrapper is BSD-3-Clause |
+| Reproducibility | Callers should choose and record the exact OpenVAF executable used in their toolchain |
+
+Provide OpenVAF through `OPENVAF_BIN`, `PATH`, or `OpenVAFConfiguration(executable:)`.
 
 ## License
 
