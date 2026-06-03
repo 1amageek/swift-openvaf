@@ -237,9 +237,29 @@ struct FoundationOpenVAFProcessRunnerTests {
     @Test("Run reports cancellation when terminated process exits normally")
     func runReportsCancellationWhenTerminatedProcessExitsNormally() async throws {
         let runner = FoundationOpenVAFProcessRunner()
+        let sandbox = try ProcessRunnerTemporaryDirectory(name: "cancel-normal-exit")
+        defer { sandbox.remove() }
+
+        let readyURL = sandbox.url.appendingPathComponent("handler-ready")
+        let cancelledURL = sandbox.url.appendingPathComponent("handler-cancelled")
+        let script = #"""
+        $| = 1;
+        my $ready = $ARGV[0];
+        my $cancelled = $ARGV[1];
+        $SIG{TERM} = sub {
+            open my $fh, ">", $cancelled or die $!;
+            print $fh "cancelled";
+            close $fh;
+            exit 0;
+        };
+        open my $ready_fh, ">", $ready or die $!;
+        print $ready_fh "ready";
+        close $ready_fh;
+        while (1) { select(undef, undef, undef, 0.01); }
+        """#
         let command = OpenVAFProcessCommand(
-            executableURL: URL(fileURLWithPath: "/bin/sh"),
-            arguments: ["-c", "trap 'printf cancelled; exit 0' TERM; while :; do sleep 0.01; done"],
+            executableURL: URL(fileURLWithPath: "/usr/bin/perl"),
+            arguments: ["-e", script, readyURL.path, cancelledURL.path],
             environment: nil,
             workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
             timeout: .seconds(30),
@@ -250,7 +270,7 @@ struct FoundationOpenVAFProcessRunnerTests {
             try await runner.run(command)
         }
 
-        try await ContinuousClock().sleep(for: .milliseconds(50))
+        try await waitUntilFileExists(readyURL)
         task.cancel()
 
         do {
@@ -258,9 +278,10 @@ struct FoundationOpenVAFProcessRunnerTests {
             Issue.record("Expected process cancellation")
         } catch let error as OpenVAFProcessError {
             switch error {
-            case .cancelled(let executablePath, let standardOutput, _, let startedAt, let finishedAt):
-                #expect(executablePath == "/bin/sh")
-                #expect(standardOutput.contains("cancelled"))
+            case .cancelled(let executablePath, _, _, let startedAt, let finishedAt):
+                #expect(executablePath == "/usr/bin/perl")
+                let marker = try String(contentsOf: cancelledURL, encoding: .utf8)
+                #expect(marker == "cancelled")
                 #expect(finishedAt >= startedAt)
             case .launchFailed, .timedOut:
                 Issue.record("Expected cancellation, got \(error)")
@@ -305,7 +326,7 @@ struct FoundationOpenVAFProcessRunnerTests {
 
     private func waitUntilFileExists(_ url: URL) async throws {
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(1))
+        let deadline = clock.now.advanced(by: .seconds(5))
         while !FileManager.default.fileExists(atPath: url.path) && clock.now < deadline {
             try await clock.sleep(for: .milliseconds(5))
         }

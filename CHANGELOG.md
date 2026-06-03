@@ -4,6 +4,13 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.7.3 - 2026-06-04
+
+### Fixed
+
+- Stabilize the cancellation regression test with a single-process `SIGTERM` handler that exits normally after cancellation.
+- Update SwiftPM installation guidance to start from 0.7.3.
+
 ## 0.7.2 - 2026-06-04
 
 ### Fixed
