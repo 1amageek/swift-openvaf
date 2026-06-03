@@ -4,6 +4,10 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Add an integration test that runs a fake OpenVAF executable through the real resolver, process runner, staging, and artifact path.
+
 ## 0.2.9 - 2026-06-04
 
 ### Fixed
