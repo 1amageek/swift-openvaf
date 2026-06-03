@@ -84,6 +84,8 @@ let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
 ))
 ```
 
+Use `.name("openvaf")` only for plain executable file names that should be searched on `PATH`. Use `.path(...)` for absolute or relative paths. Empty `PATH` components are treated as current-directory searches, matching POSIX command lookup behavior.
+
 ## Basic Usage
 
 ```swift
@@ -206,6 +208,7 @@ let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
 | Error | When it occurs |
 |---|---|
 | `executableNotFound` | No configured executable can be found |
+| `invalidExecutableName` | An executable name contains path components or is not a plain file name |
 | `notExecutable` | The resolved file is not executable |
 | `invalidOutputFileName` | `outputFileName` is empty, contains path components, or is not `.osdi` |
 | `fileSystemFailure` | Source validation, staging, hashing, or directory creation fails |

@@ -43,6 +43,56 @@ struct PATHOpenVAFExecutableResolverTests {
         #expect(resolved == executable)
     }
 
+    @Test("PATH lookup rejects names with path components")
+    func pathLookupRejectsNamesWithPathComponents() throws {
+        let sandbox = try TemporaryDirectory(name: "resolver-invalid-name")
+        defer { sandbox.remove() }
+
+        let escapedExecutable = try createExecutable(at: sandbox.url.appendingPathComponent("openvaf"))
+        let pathDirectory = sandbox.url.appendingPathComponent("path")
+        try FileManager.default.createDirectory(at: pathDirectory, withIntermediateDirectories: true)
+
+        #expect(throws: OpenVAFError.invalidExecutableName(
+            "../openvaf",
+            message: "Name must not contain path components"
+        )) {
+            try PATHOpenVAFExecutableResolver().resolve(
+                .name("../openvaf"),
+                environment: ["PATH": pathDirectory.path]
+            )
+        }
+        #expect(FileManager.default.fileExists(atPath: escapedExecutable.path))
+    }
+
+    @Test("Environment fallback rejects invalid executable name")
+    func environmentFallbackRejectsInvalidExecutableName() throws {
+        let sandbox = try TemporaryDirectory(name: "resolver-invalid-fallback")
+        defer { sandbox.remove() }
+
+        #expect(throws: OpenVAFError.invalidExecutableName(
+            "sub/openvaf",
+            message: "Name must not contain path components"
+        )) {
+            try PATHOpenVAFExecutableResolver().resolve(
+                .environment(variable: "OPENVAF_BIN", fallbackName: "sub/openvaf"),
+                environment: ["PATH": sandbox.url.path]
+            )
+        }
+    }
+
+    @Test("PATH empty components are recorded as current directory")
+    func pathEmptyComponentsAreRecordedAsCurrentDirectory() throws {
+        #expect(throws: OpenVAFError.executableNotFound(
+            name: "definitely-missing-openvaf",
+            searchedPaths: [".", "/missing", "."]
+        )) {
+            try PATHOpenVAFExecutableResolver().resolve(
+                .name("definitely-missing-openvaf"),
+                environment: ["PATH": ":/missing:"]
+            )
+        }
+    }
+
     @Test("Path lookup rejects non-executable file")
     func pathLookupRejectsNonExecutableFile() throws {
         let sandbox = try TemporaryDirectory(name: "resolver-not-executable")

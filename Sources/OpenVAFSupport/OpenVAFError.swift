@@ -3,6 +3,7 @@ import Foundation
 /// Typed errors emitted by OpenVAFSupport.
 public enum OpenVAFError: Error, Sendable, Equatable {
     case executableNotFound(name: String, searchedPaths: [String])
+    case invalidExecutableName(String, message: String)
     case notExecutable(path: String)
     case invalidOutputFileName(String, message: String)
     case fileSystemFailure(operation: String, path: String, message: String)
@@ -20,6 +21,8 @@ extension OpenVAFError: LocalizedError {
         switch self {
         case .executableNotFound(let name, let searchedPaths):
             return "OpenVAF executable '\(name)' was not found on PATH: \(searchedPaths.joined(separator: ":"))"
+        case .invalidExecutableName(let name, let message):
+            return "Invalid OpenVAF executable name '\(name)': \(message)"
         case .notExecutable(let path):
             return "OpenVAF is not executable at \(path)"
         case .invalidOutputFileName(let fileName, let message):

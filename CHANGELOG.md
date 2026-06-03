@@ -17,6 +17,7 @@ All notable changes to this package will be documented in this file.
 - Drain process output pipes more reliably while avoiding inherited pipe handle hangs.
 - Run CI tests through the repository timeout script so hangs fail explicitly.
 - Validate OpenVAF executable candidates as regular executable files, while preserving executable symlink support.
+- Reject executable names with path components before `PATH` lookup and record empty `PATH` components as current-directory searches.
 - Stream source hashing instead of loading the full source into memory.
 - Stage symlinked sources as regular file contents and reject non-regular source inputs.
 - Treat missing, directory, and empty OSDI outputs as failed outputs instead of successful artifacts.

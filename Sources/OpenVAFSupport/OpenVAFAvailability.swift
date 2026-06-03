@@ -35,6 +35,7 @@ public struct OpenVAFInstallation: Sendable, Equatable {
 /// Structured reason why OpenVAF cannot currently be used.
 public enum OpenVAFUnavailableReason: Sendable, Equatable {
     case executableNotFound(name: String, searchedPaths: [String])
+    case invalidExecutableName(String, message: String)
     case notExecutable(path: String)
     case versionCheckFailed(exitCode: Int32, standardOutput: String, standardError: String)
     case launchFailed(executablePath: String, message: String)

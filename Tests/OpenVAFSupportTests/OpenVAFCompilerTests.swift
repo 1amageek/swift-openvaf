@@ -93,6 +93,21 @@ struct CommandLineOpenVAFCompilerTests {
         )))
     }
 
+    @Test("Availability reports invalid executable names without launching")
+    func availabilityReportsInvalidExecutableNamesWithoutLaunching() async throws {
+        let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
+            executable: .name("../openvaf"),
+            processEnvironment: ["PATH": "/missing"]
+        ))
+
+        let availability = await compiler.availability()
+
+        #expect(availability == .unavailable(.invalidExecutableName(
+            "../openvaf",
+            message: "Name must not contain path components"
+        )))
+    }
+
     @Test("Availability maps unexpected resolver errors without trapping")
     func availabilityMapsUnexpectedResolverErrorsWithoutTrapping() async throws {
         let runner = RecordingProcessRunner { _ in
@@ -919,6 +934,29 @@ struct CommandLineOpenVAFCompilerTests {
         await #expect(throws: OpenVAFError.executableNotFound(
             name: "openvaf",
             searchedPaths: ["/missing"]
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
+    @Test("Compile does not create working directory when executable name is invalid")
+    func compileDoesNotCreateWorkingDirectoryWhenExecutableNameIsInvalid() async throws {
+        let sandbox = try TemporaryDirectory(name: "invalid-executable-name")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
+            executable: .name("../openvaf"),
+            processEnvironment: ["PATH": sandbox.url.path]
+        ))
+
+        await #expect(throws: OpenVAFError.invalidExecutableName(
+            "../openvaf",
+            message: "Name must not contain path components"
         )) {
             try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
         }

@@ -547,6 +547,8 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         switch error {
         case .executableNotFound(let name, let searchedPaths):
             return .executableNotFound(name: name, searchedPaths: searchedPaths)
+        case .invalidExecutableName(let name, let message):
+            return .invalidExecutableName(name, message: message)
         case .notExecutable(let path):
             return .notExecutable(path: path)
         case .launchFailed(let executablePath, let message):
