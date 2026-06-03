@@ -3,6 +3,8 @@ import CryptoKit
 
 /// OpenVAF compiler implementation backed by the OpenVAF command line tool.
 public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
+    private static let maximumInstallationQueryAttempts = 2
+
     private let configuration: OpenVAFConfiguration
     private let executableResolver: any OpenVAFExecutableResolving
     private let processRunner: any OpenVAFProcessRunning
@@ -54,16 +56,38 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             terminationGrace: configuration.terminationGrace
         )
 
-        return await queryInstallation(
-            command: command,
-            cacheSnapshot: installationCache.snapshot(for: executableURL)
-        )
+        return await queryAvailability(command: command)
+    }
+
+    private enum InstallationQueryResult {
+        case available(InstallationMetadata)
+        case unavailable(OpenVAFUnavailableReason)
+        case unstable
+    }
+
+    private func queryAvailability(command: OpenVAFProcessCommand) async -> OpenVAFAvailability {
+        for _ in 0..<Self.maximumInstallationQueryAttempts {
+            let cacheSnapshot = installationCache.snapshot(for: command.executableURL)
+            switch await queryInstallation(command: command, cacheSnapshot: cacheSnapshot) {
+            case .available(let metadata):
+                return .available(metadata.installation)
+            case .unavailable(let reason):
+                return .unavailable(reason)
+            case .unstable:
+                continue
+            }
+        }
+
+        return .unavailable(.launchFailed(
+            executablePath: command.executableURL.path,
+            message: "Executable changed during version check"
+        ))
     }
 
     private func queryInstallation(
         command: OpenVAFProcessCommand,
         cacheSnapshot: OpenVAFInstallationCache.Snapshot?
-    ) async -> OpenVAFAvailability {
+    ) async -> InstallationQueryResult {
         do {
             let result = try await processRunner.run(command)
             let output = [result.standardOutput, result.standardError]
@@ -84,9 +108,15 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 rawVersionOutput: output
             )
             if let cacheSnapshot {
+                guard installationCache.isStable(cacheSnapshot, for: command.executableURL) else {
+                    return .unstable
+                }
                 installationCache.store(installation, forStable: cacheSnapshot)
             }
-            return .available(installation)
+            return .available(InstallationMetadata(
+                installation: installation,
+                cacheSnapshot: cacheSnapshot
+            ))
         } catch let error as OpenVAFProcessError {
             return .unavailable(unavailableReason(from: error))
         } catch {
@@ -1047,12 +1077,6 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         matching executableURL: URL,
         environment: [String: String]
     ) async -> InstallationMetadata? {
-        let cacheSnapshot = installationCache.snapshot(for: executableURL)
-        if let cacheSnapshot,
-           let installation = installationCache.installation(for: cacheSnapshot) {
-            return InstallationMetadata(installation: installation, cacheSnapshot: cacheSnapshot)
-        }
-
         let command = OpenVAFProcessCommand(
             executableURL: executableURL,
             arguments: ["--version"],
@@ -1061,17 +1085,26 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             timeout: configuration.availabilityTimeout,
             terminationGrace: configuration.terminationGrace
         )
-        let availability = await queryInstallation(
-            command: command,
-            cacheSnapshot: cacheSnapshot
-        )
-        switch availability {
-        case .available(let installation)
-            where installation.executableURL.standardizedFileURL == executableURL.standardizedFileURL:
-            return InstallationMetadata(installation: installation, cacheSnapshot: cacheSnapshot)
-        case .available, .unavailable:
-            return nil
+
+        for _ in 0..<Self.maximumInstallationQueryAttempts {
+            let cacheSnapshot = installationCache.snapshot(for: executableURL)
+            if let cacheSnapshot,
+               let installation = installationCache.installation(for: cacheSnapshot) {
+                return InstallationMetadata(installation: installation, cacheSnapshot: cacheSnapshot)
+            }
+
+            switch await queryInstallation(command: command, cacheSnapshot: cacheSnapshot) {
+            case .available(let metadata)
+                where metadata.installation.executableURL.standardizedFileURL == executableURL.standardizedFileURL:
+                return metadata
+            case .available, .unavailable:
+                return nil
+            case .unstable:
+                continue
+            }
         }
+
+        return nil
     }
 
     private func cleanupFailedWorkingDirectory(_ url: URL) {

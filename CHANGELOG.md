@@ -4,6 +4,14 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.7.5 - 2026-06-04
+
+### Fixed
+
+- Recheck OpenVAF executable stability after version checks so `availability()` does not report stale version metadata when the executable is replaced mid-query.
+- Retry one executable replacement during compile metadata discovery, and omit version metadata instead of failing compilation if the executable keeps changing.
+- Update SwiftPM installation guidance to start from 0.7.5.
+
 ## 0.7.4 - 2026-06-04
 
 ### Fixed

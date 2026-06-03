@@ -92,6 +92,105 @@ struct CommandLineOpenVAFCompilerTests {
         }
     }
 
+    @Test("Availability refreshes version when executable changes during version check")
+    func availabilityRefreshesVersionWhenExecutableChangesDuringVersionCheck() async throws {
+        let sandbox = try TemporaryDirectory(name: "availability-version-replacement")
+        defer { sandbox.remove() }
+
+        let executableURL = sandbox.url.appendingPathComponent("openvaf")
+        try writeExecutableMarker("first", to: executableURL)
+
+        let runner = RecordingProcessRunner { command in
+            let executableData = try Data(contentsOf: command.executableURL)
+            let executableText = String(decoding: executableData, as: UTF8.self)
+            if executableText.contains("first") {
+                try writeExecutableMarker("second", to: command.executableURL)
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.0.0\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "OpenVAF 2.0.0\n",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: executableURL),
+            processRunner: runner
+        )
+
+        let availability = await compiler.availability()
+        let commands = await runner.recordedCommands()
+
+        switch availability {
+        case .available(let installation):
+            #expect(installation.version == "2.0.0")
+            #expect(installation.rawVersionOutput == "OpenVAF 2.0.0\n")
+        case .unavailable(let reason):
+            Issue.record("Expected refreshed OpenVAF availability, got \(reason)")
+        }
+        #expect(commands.filter { $0.arguments == ["--version"] }.count == 2)
+    }
+
+    @Test("Availability rejects executables that keep changing during version checks")
+    func availabilityRejectsExecutablesThatKeepChangingDuringVersionChecks() async throws {
+        let sandbox = try TemporaryDirectory(name: "availability-version-unstable")
+        defer { sandbox.remove() }
+
+        let executableURL = sandbox.url.appendingPathComponent("openvaf")
+        try writeExecutableMarker("first", to: executableURL)
+
+        let runner = RecordingProcessRunner { command in
+            let executableData = try Data(contentsOf: command.executableURL)
+            let executableText = String(decoding: executableData, as: UTF8.self)
+            if executableText.contains("first") {
+                try writeExecutableMarker("second", to: command.executableURL)
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.0.0\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            try writeExecutableMarker("third", to: command.executableURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "OpenVAF 2.0.0\n",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: executableURL),
+            processRunner: runner
+        )
+
+        let availability = await compiler.availability()
+        let commands = await runner.recordedCommands()
+
+        switch availability {
+        case .unavailable(.launchFailed(let executablePath, let message)):
+            #expect(executablePath == executableURL.path)
+            #expect(message == "Executable changed during version check")
+        case .available, .unavailable:
+            Issue.record("Expected unstable executable availability, got \(availability)")
+        }
+        #expect(commands.filter { $0.arguments == ["--version"] }.count == 2)
+    }
+
     @Test("Availability reports missing executable without launching")
     func availabilityReportsMissingExecutable() async throws {
         let runner = RecordingProcessRunner { _ in
@@ -2932,8 +3031,8 @@ module model; endmodule
         #expect(commands.filter { $0.arguments == ["--version"] }.count == 2)
     }
 
-    @Test("Compile omits OpenVAF version observed during executable replacement")
-    func compileOmitsOpenVAFVersionObservedDuringExecutableReplacement() async throws {
+    @Test("Compile refreshes OpenVAF version observed during executable replacement")
+    func compileRefreshesOpenVAFVersionObservedDuringExecutableReplacement() async throws {
         let sandbox = try TemporaryDirectory(name: "version-cache-replacement-race")
         defer { sandbox.remove() }
 
@@ -2988,9 +3087,71 @@ module model; endmodule
         let second = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
         let commands = await runner.recordedCommands()
 
-        #expect(first.openVAFVersion == nil)
+        #expect(first.openVAFVersion == "2.0.0")
         #expect(second.openVAFVersion == "2.0.0")
         #expect(commands.filter { $0.arguments == ["--version"] }.count == 2)
+    }
+
+    @Test("Compile omits OpenVAF version when executable keeps changing during version checks")
+    func compileOmitsOpenVAFVersionWhenExecutableKeepsChangingDuringVersionChecks() async throws {
+        let sandbox = try TemporaryDirectory(name: "version-cache-unstable")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("unstable.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module unstable; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let executableURL = sandbox.url.appendingPathComponent("openvaf")
+        try writeExecutableMarker("first", to: executableURL)
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                let executableData = try Data(contentsOf: command.executableURL)
+                let executableText = String(decoding: executableData, as: UTF8.self)
+                if executableText.contains("first") {
+                    try writeExecutableMarker("second", to: command.executableURL)
+                    return OpenVAFProcessResult(
+                        exitCode: 0,
+                        standardOutput: "OpenVAF 1.0.0\n",
+                        standardError: "",
+                        startedAt: Date(),
+                        finishedAt: Date()
+                    )
+                }
+
+                try writeExecutableMarker("third", to: command.executableURL)
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 2.0.0\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            let outputURL = command.workingDirectory.appendingPathComponent("unstable.osdi")
+            try Data("osdi".utf8).write(to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: executableURL),
+            processRunner: runner
+        )
+
+        let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        let commands = await runner.recordedCommands()
+
+        #expect(artifact.openVAFVersion == nil)
+        #expect(artifact.exitCode == 0)
+        #expect(commands.filter { $0.arguments == ["--version"] }.count == 2)
+        #expect(commands.filter { $0.arguments != ["--version"] }.count == 1)
     }
 
     @Test("Compile omits OpenVAF version when executable changes during compilation")
