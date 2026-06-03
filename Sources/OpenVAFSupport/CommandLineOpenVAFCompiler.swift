@@ -101,7 +101,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         let commandRecord = OpenVAFCommandRecord(
             executableURL: executableURL,
             arguments: arguments,
-            workingDirectory: prepared.workingDirectory,
+            workingDirectory: prepared.commandWorkingDirectory,
             environment: environmentRecord(from: environment)
         )
 
@@ -109,7 +109,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             executableURL: executableURL,
             arguments: arguments,
             environment: environment,
-            workingDirectory: prepared.workingDirectory,
+            workingDirectory: prepared.commandWorkingDirectory,
             timeout: configuration.compileTimeout,
             terminationGrace: configuration.terminationGrace
         )
@@ -157,7 +157,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 finishedAt: result.finishedAt
             )
         } catch let error as OpenVAFProcessError {
-            cleanupFailedWorkingDirectory(prepared.workingDirectory)
+            cleanupFailedWorkingDirectory(prepared.stagingRootDirectory)
             throw compileError(
                 from: error,
                 prepared: prepared,
@@ -165,17 +165,18 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 installation: installation
             )
         } catch let error as OpenVAFError {
-            cleanupFailedWorkingDirectory(prepared.workingDirectory)
+            cleanupFailedWorkingDirectory(prepared.stagingRootDirectory)
             throw error
         } catch {
-            cleanupFailedWorkingDirectory(prepared.workingDirectory)
+            cleanupFailedWorkingDirectory(prepared.stagingRootDirectory)
             throw .launchFailed(executablePath: executableURL.path, message: error.localizedDescription)
         }
     }
 
     private struct PreparedSource {
         let sourceURL: URL
-        let workingDirectory: URL
+        let stagingRootDirectory: URL
+        let commandWorkingDirectory: URL
         let stagedSourceURL: URL
         let outputURL: URL
         let sourceSHA256: String
@@ -186,6 +187,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         let stagedSourceFileName: String
         let outputDirectory: URL
         let outputFileName: String
+        let includeURLs: [URL]
     }
 
     private enum ConfigurationUse {
@@ -388,6 +390,8 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             )
         }
 
+        let includeURLs = try discoverLocalIncludeURLs(startingAt: sourceURL)
+
         return ValidatedSource(
             sourceURL: sourceURL,
             stagedSourceFileName: stagedSourceFileName(
@@ -395,22 +399,35 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 sourceURL: sourceURL
             ),
             outputDirectory: outputDirectory,
-            outputFileName: outputFileName
+            outputFileName: outputFileName,
+            includeURLs: includeURLs
         )
     }
 
     private func stage(_ source: ValidatedSource) throws(OpenVAFError) -> PreparedSource {
         let fileManager = FileManager.default
-        let workingDirectory = source.outputDirectory.appendingPathComponent("openvaf-\(UUID().uuidString)")
-        let stagedSourceURL = workingDirectory.appendingPathComponent(source.stagedSourceFileName)
-        let outputURL = workingDirectory.appendingPathComponent(source.outputFileName)
+        let sourceRootDirectory = commonAncestorDirectory(
+            for: [source.sourceURL.deletingLastPathComponent()]
+                + source.includeURLs.map { $0.deletingLastPathComponent() }
+        )
+        let stagingRootDirectory = source.outputDirectory.appendingPathComponent("openvaf-\(UUID().uuidString)")
+        let sourceRelativeDirectory = try relativePath(
+            from: sourceRootDirectory,
+            to: source.sourceURL.deletingLastPathComponent()
+        )
+        let commandWorkingDirectory = appendingRelativePath(
+            sourceRelativeDirectory,
+            to: stagingRootDirectory
+        )
+        let stagedSourceURL = commandWorkingDirectory.appendingPathComponent(source.stagedSourceFileName)
+        let outputURL = commandWorkingDirectory.appendingPathComponent(source.outputFileName)
 
         do {
-            try fileManager.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+            try fileManager.createDirectory(at: commandWorkingDirectory, withIntermediateDirectories: true)
         } catch {
             throw .fileSystemFailure(
                 operation: "create working directory",
-                path: workingDirectory.path,
+                path: commandWorkingDirectory.path,
                 message: error.localizedDescription
             )
         }
@@ -421,7 +438,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 to: stagedSourceURL
             )
         } catch {
-            cleanupFailedWorkingDirectory(workingDirectory)
+            cleanupFailedWorkingDirectory(stagingRootDirectory)
             throw .fileSystemFailure(
                 operation: "stage source",
                 path: stagedSourceURL.path,
@@ -429,21 +446,208 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             )
         }
 
+        do {
+            try stageIncludes(
+                source.includeURLs,
+                sourceRootDirectory: sourceRootDirectory,
+                stagingRootDirectory: stagingRootDirectory,
+                stagedSourceURL: stagedSourceURL
+            )
+        } catch {
+            cleanupFailedWorkingDirectory(stagingRootDirectory)
+            throw error
+        }
+
         let sourceSHA256: String
         do {
             sourceSHA256 = try sha256HexDigest(of: stagedSourceURL)
         } catch {
-            cleanupFailedWorkingDirectory(workingDirectory)
+            cleanupFailedWorkingDirectory(stagingRootDirectory)
             throw error
         }
 
         return PreparedSource(
             sourceURL: source.sourceURL,
-            workingDirectory: workingDirectory,
+            stagingRootDirectory: stagingRootDirectory,
+            commandWorkingDirectory: commandWorkingDirectory,
             stagedSourceURL: stagedSourceURL,
             outputURL: outputURL,
             sourceSHA256: sourceSHA256
         )
+    }
+
+    private func discoverLocalIncludeURLs(startingAt sourceURL: URL) throws(OpenVAFError) -> [URL] {
+        var pending = [sourceURL]
+        var visited: Set<String> = []
+        var includes: [URL] = []
+
+        while let currentURL = pending.popLast() {
+            let currentKey = currentURL.standardizedFileURL.path
+            guard !visited.contains(currentKey) else { continue }
+            visited.insert(currentKey)
+
+            let includePaths = try VerilogAIncludeScanner.includePaths(
+                in: currentURL.resolvingSymlinksInPath()
+            )
+            for includePath in includePaths {
+                guard let includeURL = try localIncludeURL(
+                    includePath,
+                    relativeTo: currentURL
+                ) else {
+                    continue
+                }
+
+                let includeKey = includeURL.standardizedFileURL.path
+                if !includes.contains(where: { $0.standardizedFileURL.path == includeKey }) {
+                    includes.append(includeURL)
+                }
+
+                if !visited.contains(includeKey) {
+                    pending.append(includeURL)
+                }
+            }
+        }
+
+        return includes
+    }
+
+    private func localIncludeURL(
+        _ includePath: String,
+        relativeTo includingURL: URL
+    ) throws(OpenVAFError) -> URL? {
+        guard !containsNUL(includePath) else {
+            throw .fileSystemFailure(
+                operation: "read include",
+                path: includePath,
+                message: "Include path must not contain NUL"
+            )
+        }
+
+        guard !includePath.hasPrefix("/") else { return nil }
+
+        let includeURL = includingURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(includePath)
+            .standardizedFileURL
+
+        guard FileManager.default.fileExists(atPath: includeURL.path) else {
+            return nil
+        }
+
+        try validateIncludeFile(at: includeURL)
+        return includeURL
+    }
+
+    private func validateIncludeFile(at includeURL: URL) throws(OpenVAFError) {
+        var isDirectory = ObjCBool(false)
+        guard FileManager.default.fileExists(atPath: includeURL.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else {
+            throw .fileSystemFailure(
+                operation: "read include",
+                path: includeURL.path,
+                message: "Include must be a regular file"
+            )
+        }
+
+        guard FileManager.default.isReadableFile(atPath: includeURL.path) else {
+            throw .fileSystemFailure(
+                operation: "read include",
+                path: includeURL.path,
+                message: "Include file is not readable"
+            )
+        }
+
+        guard isRegularFile(at: includeURL) else {
+            throw .fileSystemFailure(
+                operation: "read include",
+                path: includeURL.path,
+                message: "Include must be a regular file"
+            )
+        }
+    }
+
+    private func stageIncludes(
+        _ includeURLs: [URL],
+        sourceRootDirectory: URL,
+        stagingRootDirectory: URL,
+        stagedSourceURL: URL
+    ) throws(OpenVAFError) {
+        for includeURL in includeURLs {
+            let relativeIncludePath = try relativePath(from: sourceRootDirectory, to: includeURL)
+            let stagedIncludeURL = appendingRelativePath(relativeIncludePath, to: stagingRootDirectory)
+            guard stagedIncludeURL != stagedSourceURL else { continue }
+
+            do {
+                try FileManager.default.createDirectory(
+                    at: stagedIncludeURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                if FileManager.default.fileExists(atPath: stagedIncludeURL.path) {
+                    try FileManager.default.removeItem(at: stagedIncludeURL)
+                }
+                try FileManager.default.copyItem(
+                    at: includeURL.resolvingSymlinksInPath(),
+                    to: stagedIncludeURL
+                )
+            } catch {
+                throw .fileSystemFailure(
+                    operation: "stage include",
+                    path: stagedIncludeURL.path,
+                    message: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    private func commonAncestorDirectory(for urls: [URL]) -> URL {
+        guard let firstURL = urls.first else {
+            return URL(fileURLWithPath: "/", isDirectory: true)
+        }
+
+        var commonComponents = firstURL.standardizedFileURL.pathComponents
+        for url in urls.dropFirst() {
+            let components = url.standardizedFileURL.pathComponents
+            var index = 0
+            while index < commonComponents.count,
+                  index < components.count,
+                  commonComponents[index] == components[index] {
+                index += 1
+            }
+            commonComponents = Array(commonComponents.prefix(index))
+        }
+
+        guard let firstComponent = commonComponents.first else {
+            return URL(fileURLWithPath: "/", isDirectory: true)
+        }
+
+        var result = URL(fileURLWithPath: firstComponent, isDirectory: true)
+        for component in commonComponents.dropFirst() {
+            result.appendPathComponent(component, isDirectory: true)
+        }
+        return result.standardizedFileURL
+    }
+
+    private func relativePath(from rootURL: URL, to targetURL: URL) throws(OpenVAFError) -> String {
+        let rootComponents = rootURL.standardizedFileURL.pathComponents
+        let targetComponents = targetURL.standardizedFileURL.pathComponents
+
+        guard targetComponents.count >= rootComponents.count,
+              zip(rootComponents, targetComponents).allSatisfy({ $0 == $1 }) else {
+            throw .fileSystemFailure(
+                operation: "stage source",
+                path: targetURL.path,
+                message: "Path is outside staging root"
+            )
+        }
+
+        return targetComponents
+            .dropFirst(rootComponents.count)
+            .joined(separator: "/")
+    }
+
+    private func appendingRelativePath(_ relativePath: String, to baseURL: URL) -> URL {
+        guard !relativePath.isEmpty else { return baseURL }
+        return baseURL.appendingPathComponent(relativePath)
     }
 
     private func validatedOutputFileName(

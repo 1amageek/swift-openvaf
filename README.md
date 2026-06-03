@@ -40,7 +40,7 @@ Add `OpenVAFSupport` as a SwiftPM dependency.
 ```swift
 .package(
     url: "https://github.com/1amageek/swift-openvaf.git",
-    from: "0.2.0"
+    from: "0.2.1"
 )
 ```
 
@@ -125,6 +125,8 @@ print(artifact.outputURL.lastPathComponent)
 
 Output file names must be plain `.osdi` file names. Path components are rejected.
 
+When the source uses local quoted Verilog-A includes, `OpenVAFSupport` stages the referenced files with the same relative layout so the staged source can still resolve them. Missing local include files are left to OpenVAF's own include resolution, which preserves support for built-in files such as `disciplines.vams`.
+
 ## Failure Handling
 
 Compile-specific failures preserve invocation evidence through `OpenVAFCompilationFailure`.
@@ -177,8 +179,11 @@ Each compile creates a run-scoped directory under the requested output directory
 ```text
 <output-directory>/
   openvaf-<uuid>/
-    <staged-source>.va
-    <output>.osdi
+    <relative-source-directory>/
+      <staged-source>.va
+      <output>.osdi
+    <relative-include-directory>/
+      <local-include-file>
 ```
 
 Successful compilations keep this directory because the returned artifact points to files inside it. Failed compilations remove it by default.
@@ -235,7 +240,7 @@ The test suite covers:
 | Area | Coverage |
 |---|---|
 | Resolver | Environment precedence, `PATH` lookup, executable regular file validation, non-executable rejection |
-| Compiler | Availability, regular source staging, streamed source hashing, custom output names, version caching, cleanup policy |
+| Compiler | Availability, regular source staging, local include staging, streamed source hashing, custom output names, version caching, cleanup policy |
 | Failure artifacts | Non-zero exit, timeout, cancellation, missing or invalid output |
 | Process runner | stdout/stderr capture, large output drain, inherited pipe handles, invalid UTF-8, launch failure, timeout, cancellation |
 | End-to-end | Real OpenVAF Verilog-A to OSDI compile when OpenVAF is available |

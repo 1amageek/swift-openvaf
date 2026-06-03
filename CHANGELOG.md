@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.2.1 - 2026-06-04
+
+### Fixed
+
+- Stage local Verilog-A include files with their original relative layout so custom output staging does not break source-relative `include` directives.
+
 ## 0.2.0 - 2026-06-04
 
 ### Added

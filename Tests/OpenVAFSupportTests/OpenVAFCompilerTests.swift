@@ -498,6 +498,126 @@ struct CommandLineOpenVAFCompilerTests {
         #expect(artifact.outputURL.lastPathComponent == "linked.osdi")
     }
 
+    @Test("Compile stages local include files beside the source")
+    func compileStagesLocalIncludeFilesBesideTheSource() async throws {
+        let sandbox = try TemporaryDirectory(name: "local-include")
+        defer { sandbox.remove() }
+
+        let sourceDirectory = sandbox.url.appendingPathComponent("src")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+
+        let sourceURL = sourceDirectory.appendingPathComponent("model.va")
+        let includeURL = sourceDirectory.appendingPathComponent("params.inc")
+        try """
+`include "params.inc"
+module model; endmodule
+""".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "`define MODEL_GAIN 1\n".write(to: includeURL, atomically: true, encoding: .utf8)
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            #expect(command.arguments == ["model.va"])
+            let stagedIncludeURL = command.workingDirectory.appendingPathComponent("params.inc")
+            let stagedInclude = try String(contentsOf: stagedIncludeURL, encoding: .utf8)
+            #expect(stagedInclude == "`define MODEL_GAIN 1\n")
+
+            let outputURL = command.workingDirectory.appendingPathComponent("model.osdi")
+            try Data("osdi".utf8).write(to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: runner
+        )
+
+        let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+
+        #expect(artifact.stagedSourceURL == artifact.command.workingDirectory.appendingPathComponent("model.va"))
+        #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("model.osdi"))
+    }
+
+    @Test("Compile preserves parent-relative include layout")
+    func compilePreservesParentRelativeIncludeLayout() async throws {
+        let sandbox = try TemporaryDirectory(name: "parent-relative-include")
+        defer { sandbox.remove() }
+
+        let projectDirectory = sandbox.url.appendingPathComponent("project")
+        let sourceDirectory = projectDirectory.appendingPathComponent("models")
+        let includeDirectory = projectDirectory.appendingPathComponent("include")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: includeDirectory, withIntermediateDirectories: true)
+
+        let sourceURL = sourceDirectory.appendingPathComponent("model.va")
+        let includeURL = includeDirectory.appendingPathComponent("defs.inc")
+        try """
+`include "../include/defs.inc"
+module model; endmodule
+""".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "`define MODEL_OFFSET 2\n".write(to: includeURL, atomically: true, encoding: .utf8)
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            #expect(command.arguments == ["renamed.va"])
+            #expect(command.workingDirectory.lastPathComponent == "models")
+            let stagedProjectDirectory = command.workingDirectory.deletingLastPathComponent()
+            let stagedIncludeURL = stagedProjectDirectory.appendingPathComponent("include/defs.inc")
+            let stagedInclude = try String(contentsOf: stagedIncludeURL, encoding: .utf8)
+            #expect(stagedInclude == "`define MODEL_OFFSET 2\n")
+
+            let outputURL = command.workingDirectory.appendingPathComponent("renamed.osdi")
+            try Data("osdi".utf8).write(to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: runner
+        )
+
+        let artifact = try await compiler.compile(OpenVAFCompilationRequest(
+            sourceURL: sourceURL,
+            outputDirectory: outputDirectory,
+            outputFileName: "renamed.osdi"
+        ))
+
+        #expect(artifact.stagedSourceURL.lastPathComponent == "renamed.va")
+        #expect(artifact.stagedSourceURL.deletingLastPathComponent().lastPathComponent == "models")
+        #expect(artifact.outputURL.lastPathComponent == "renamed.osdi")
+    }
+
     @Test("Compile hashes source larger than digest chunk")
     func compileHashesSourceLargerThanDigestChunk() async throws {
         let sandbox = try TemporaryDirectory(name: "large-source-hash")
