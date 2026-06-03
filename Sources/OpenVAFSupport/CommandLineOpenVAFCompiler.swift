@@ -570,7 +570,13 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             )
         }
 
-        guard !includePath.hasPrefix("/") else { return nil }
+        guard !includePath.hasPrefix("/") else {
+            throw .fileSystemFailure(
+                operation: "read include",
+                path: includePath,
+                message: "Absolute include paths are not supported"
+            )
+        }
 
         let includeURL = includingURL
             .deletingLastPathComponent()

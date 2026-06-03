@@ -719,6 +719,45 @@ module model; endmodule
         #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
     }
 
+    @Test("Compile rejects absolute include paths before launching")
+    func compileRejectsAbsoluteIncludePathsBeforeLaunching() async throws {
+        let sandbox = try TemporaryDirectory(name: "absolute-include")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        let includeURL = sandbox.url.appendingPathComponent("defs.inc")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try """
+`include "\(includeURL.path)"
+module model; endmodule
+""".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "`define MODEL_OFFSET 2\n".write(to: includeURL, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when an absolute include path is present")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "read include",
+            path: includeURL.path,
+            message: "Absolute include paths are not supported"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
     @Test("Compile stages local include symlink contents inside the include root")
     func compileStagesLocalIncludeSymlinkContentsInsideTheIncludeRoot() async throws {
         let sandbox = try TemporaryDirectory(name: "inside-include-root-symlink")

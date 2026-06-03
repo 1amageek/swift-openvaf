@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.3.3 - 2026-06-04
+
+### Fixed
+
+- Reject absolute quoted include paths before launching OpenVAF because staged sources are not rewritten to preserve absolute include dependencies.
+
 ## 0.3.2 - 2026-06-04
 
 ### Fixed

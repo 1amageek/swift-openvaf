@@ -42,7 +42,7 @@ Add `OpenVAFSupport` as a SwiftPM dependency.
 ```swift
 .package(
     url: "https://github.com/1amageek/swift-openvaf.git",
-    from: "0.3.2"
+    from: "0.3.3"
 )
 ```
 
@@ -138,7 +138,7 @@ let artifact = try await compiler.compile(OpenVAFCompilationRequest(
 ))
 ```
 
-Existing local include files outside `includeRootDirectory` are rejected before staging. Symlinks are resolved for the boundary check, then staged as regular files at their source-relative include path. Missing local include files are left to OpenVAF's own include resolution, which preserves support for built-in files such as `disciplines.vams`.
+Existing local include files outside `includeRootDirectory` are rejected before staging. Symlinks are resolved for the boundary check, then staged as regular files at their source-relative include path. Absolute quoted include paths are rejected because the staged source is not rewritten. Missing local include files are left to OpenVAF's own include resolution, which preserves support for built-in files such as `disciplines.vams`.
 
 ## Failure Handling
 
