@@ -54,13 +54,23 @@ package actor ProcessController {
     }
 
     package func terminateIfRunningOrPendingStart() -> Bool {
+        guard prepareTerminationIfRunningOrPendingStart() else { return false }
+        applyPendingTermination()
+        return true
+    }
+
+    package func prepareTerminationIfRunningOrPendingStart() -> Bool {
         guard didStart else {
             pendingTermination = true
             return true
         }
         guard process.isRunning else { return false }
-        process.terminate()
+        pendingTermination = true
         return true
+    }
+
+    package func applyPreparedTermination() {
+        applyPendingTermination()
     }
 
     package func forceKillIfRunning() {

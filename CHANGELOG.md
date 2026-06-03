@@ -4,6 +4,14 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.7.9 - 2026-06-04
+
+### Fixed
+
+- Record process timeout and cancellation requests before sending termination signals, so fast exits after `SIGTERM` are still reported as timeout or cancellation instead of normal process exits.
+- Add Thread Sanitizer coverage to CI for process coordination regressions.
+- Update SwiftPM installation guidance to start from 0.7.9.
+
 ## 0.7.8 - 2026-06-04
 
 ### Fixed

@@ -33,6 +33,26 @@ struct ProcessControllerTests {
         #expect(!process.isRunning)
     }
 
+    @Test("Controller prepares termination without signaling until applied")
+    func controllerPreparesTerminationWithoutSignalingUntilApplied() async throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        process.arguments = ["5"]
+        let controller = ProcessController(process: process)
+
+        try await controller.run()
+
+        let didPrepareTermination = await controller.prepareTerminationIfRunningOrPendingStart()
+
+        #expect(didPrepareTermination)
+        #expect(process.isRunning)
+
+        await controller.applyPreparedTermination()
+        try await waitUntilProcessStops(process)
+
+        #expect(!process.isRunning)
+    }
+
     @Test("Controller refuses termination after process exit")
     func controllerRefusesTerminationAfterProcessExit() async throws {
         let process = Process()
