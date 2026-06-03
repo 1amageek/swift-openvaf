@@ -221,7 +221,7 @@ let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
 Run the package tests.
 
 ```bash
-swift test
+scripts/swift-test-timeout.sh 30 swift test
 ```
 
 The test suite covers:
@@ -231,7 +231,7 @@ The test suite covers:
 | Resolver | Environment precedence, `PATH` lookup, non-executable rejection |
 | Compiler | Availability, staging, custom output names, version caching, cleanup policy |
 | Failure artifacts | Non-zero exit, timeout, cancellation, missing output |
-| Process runner | stdout/stderr capture, invalid UTF-8, launch failure, timeout, cancellation |
+| Process runner | stdout/stderr capture, large output drain, inherited pipe handles, invalid UTF-8, launch failure, timeout, cancellation |
 | End-to-end | Real OpenVAF Verilog-A to OSDI compile when OpenVAF is available |
 
 Swift Testing suites use explicit `timeLimit` traits to guard against hangs.

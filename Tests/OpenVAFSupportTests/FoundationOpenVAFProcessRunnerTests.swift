@@ -42,6 +42,47 @@ struct FoundationOpenVAFProcessRunnerTests {
         #expect(!result.standardOutput.isEmpty)
     }
 
+    @Test("Run drains large stdout and stderr")
+    func runDrainsLargeStdoutAndStderr() async throws {
+        let runner = FoundationOpenVAFProcessRunner()
+        let command = OpenVAFProcessCommand(
+            executableURL: URL(fileURLWithPath: "/usr/bin/perl"),
+            arguments: ["-e", "print \"o\" x 131072; print STDERR \"e\" x 131072;"],
+            environment: nil,
+            workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            timeout: .seconds(5),
+            terminationGrace: .milliseconds(10)
+        )
+
+        let result = try await runner.run(command)
+
+        #expect(result.exitCode == 0)
+        #expect(result.standardOutput.count == 131_072)
+        #expect(result.standardError.count == 131_072)
+    }
+
+    @Test("Run completes when an exited child leaves inherited pipe handles open")
+    func runCompletesWhenExitedChildLeavesInheritedPipeHandlesOpen() async throws {
+        let runner = FoundationOpenVAFProcessRunner()
+        let clock = ContinuousClock()
+        let startedAt = clock.now
+        let command = OpenVAFProcessCommand(
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "(sleep 2) & printf done"],
+            environment: nil,
+            workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            timeout: .seconds(5),
+            terminationGrace: .milliseconds(10)
+        )
+
+        let result = try await runner.run(command)
+        let elapsed = startedAt.duration(to: clock.now)
+
+        #expect(result.exitCode == 0)
+        #expect(result.standardOutput == "done")
+        #expect(elapsed < .seconds(1))
+    }
+
     @Test("Run maps launch failures")
     func runMapsLaunchFailures() async throws {
         let runner = FoundationOpenVAFProcessRunner()

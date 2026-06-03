@@ -24,21 +24,4 @@ jobs:
         run: swift build
 
       - name: Test
-        run: |
-          perl -e '
-            my $pid = fork();
-            die "fork failed\n" unless defined $pid;
-            if ($pid == 0) {
-              exec @ARGV or die "exec failed: $!\n";
-            }
-            local $SIG{ALRM} = sub {
-              kill "TERM", $pid;
-              sleep 1;
-              kill "KILL", $pid;
-            };
-            alarm 30;
-            waitpid($pid, 0);
-            my $status = $?;
-            alarm 0;
-            exit($status >> 8);
-          ' swift test
+        run: scripts/swift-test-timeout.sh 30 swift test

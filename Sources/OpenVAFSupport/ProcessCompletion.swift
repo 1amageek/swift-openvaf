@@ -120,7 +120,7 @@ package actor ProcessRunCoordinator {
         finishIfReady()
     }
 
-    package func shouldStopReadingWhenIdle() -> Bool {
+    package func hasProcessFinished() -> Bool {
         exitCode != nil || immediateCompletion != nil
     }
 

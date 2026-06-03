@@ -8,11 +8,14 @@ All notable changes to this package will be documented in this file.
 
 - Optional real OpenVAF end-to-end test gated on `OPENVAF_BIN`, `PATH`, or `OPENVAF_E2E=1`.
 - README guidance for OpenVAF binary distribution and E2E testing.
+- Repository test timeout script used by local verification and CI.
 
 ### Changed
 
 - Limit inherited environment metadata in artifacts to OpenVAF-relevant keys.
 - Simplify the E2E Verilog-A fixture for broader OpenVAF compatibility.
+- Drain process output pipes more reliably while avoiding inherited pipe handle hangs.
+- Run CI tests through the repository timeout script so hangs fail explicitly.
 
 ## 0.1.0 - 2026-06-03
 

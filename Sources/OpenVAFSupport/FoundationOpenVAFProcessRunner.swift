@@ -2,6 +2,9 @@
 import Darwin
 
 package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
+    private static let pipeReadRetryInterval: Duration = .milliseconds(5)
+    private static let postExitPipeDrainGrace: Duration = .milliseconds(100)
+
     package init() {}
 
     package func run(_ command: OpenVAFProcessCommand) async throws -> OpenVAFProcessResult {
@@ -29,6 +32,7 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
 
         return try await withTaskCancellationHandler {
             if Task.isCancelled {
+                Self.closePipeHandles(outputPipe: outputPipe, errorPipe: errorPipe)
                 await coordinator.recordPrelaunchCancellation()
                 return try await coordinator.waitForResult()
             }
@@ -41,9 +45,12 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
             do {
                 try await controller.run()
             } catch {
+                Self.closePipeHandles(outputPipe: outputPipe, errorPipe: errorPipe)
                 await coordinator.recordLaunchFailure(error.localizedDescription)
                 return try await coordinator.waitForResult()
             }
+
+            Self.closeWriteHandles(outputPipe: outputPipe, errorPipe: errorPipe)
 
             let outputTask = Task.detached(priority: nil) {
                 let data = await Self.readAllData(
@@ -81,8 +88,7 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
                 timeoutTask.cancel()
                 outputTask.cancel()
                 errorTask.cancel()
-                outputPipe.fileHandleForReading.closeFile()
-                errorPipe.fileHandleForReading.closeFile()
+                Self.closeReadHandles(outputPipe: outputPipe, errorPipe: errorPipe)
             }
 
             return try await coordinator.waitForResult()
@@ -101,10 +107,26 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
         }
     }
 
+    private static func closePipeHandles(outputPipe: Pipe, errorPipe: Pipe) {
+        closeWriteHandles(outputPipe: outputPipe, errorPipe: errorPipe)
+        closeReadHandles(outputPipe: outputPipe, errorPipe: errorPipe)
+    }
+
+    private static func closeWriteHandles(outputPipe: Pipe, errorPipe: Pipe) {
+        outputPipe.fileHandleForWriting.closeFile()
+        errorPipe.fileHandleForWriting.closeFile()
+    }
+
+    private static func closeReadHandles(outputPipe: Pipe, errorPipe: Pipe) {
+        outputPipe.fileHandleForReading.closeFile()
+        errorPipe.fileHandleForReading.closeFile()
+    }
+
     private static func readAllData(
         from fileDescriptor: Int32,
         coordinator: ProcessRunCoordinator
     ) async -> Data {
+        let clock = ContinuousClock()
         let originalFlags = fcntl(fileDescriptor, F_GETFL)
         let didSetNonBlocking: Bool
         if originalFlags == -1 {
@@ -120,6 +142,7 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
 
         var result = Data()
         var buffer = [UInt8](repeating: 0, count: 4096)
+        var postExitIdleBeganAt: ContinuousClock.Instant?
 
         while true {
             let byteCount = buffer.withUnsafeMutableBufferPointer { pointer in
@@ -127,6 +150,7 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
             }
 
             if byteCount > 0 {
+                postExitIdleBeganAt = nil
                 result.append(contentsOf: buffer.prefix(byteCount))
                 continue
             }
@@ -140,11 +164,20 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
             }
 
             if errno == EAGAIN || errno == EWOULDBLOCK {
-                if await coordinator.shouldStopReadingWhenIdle() {
-                    break
+                if await coordinator.hasProcessFinished() {
+                    let now = clock.now
+                    if let idleBeganAt = postExitIdleBeganAt {
+                        if idleBeganAt.duration(to: now) >= Self.postExitPipeDrainGrace {
+                            break
+                        }
+                    } else {
+                        postExitIdleBeganAt = now
+                    }
+                } else {
+                    postExitIdleBeganAt = nil
                 }
                 do {
-                    try await ContinuousClock().sleep(for: .milliseconds(5))
+                    try await clock.sleep(for: Self.pipeReadRetryInterval)
                 } catch {
                     break
                 }
