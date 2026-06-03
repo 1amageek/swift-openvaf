@@ -199,6 +199,16 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         let includeURLs: [URL]
     }
 
+    private struct PendingIncludeScan {
+        let url: URL
+        let ancestorResolvedPaths: Set<String>
+    }
+
+    private struct IncludeScanContext: Hashable {
+        let resolvedPath: String
+        let logicalDirectoryPath: String
+    }
+
     private struct InstallationMetadata {
         let installation: OpenVAFInstallation
         let cacheSnapshot: OpenVAFInstallationCache.Snapshot?
@@ -535,15 +545,26 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         startingAt sourceURL: URL,
         includeRootDirectory: URL
     ) throws(OpenVAFError) -> [URL] {
-        var pending = [sourceURL]
-        var visited: Set<String> = []
+        var pending = [
+            PendingIncludeScan(url: sourceURL, ancestorResolvedPaths: []),
+        ]
+        var scannedContexts: Set<IncludeScanContext> = []
         var stagedIncludes: Set<String> = []
         var includes: [URL] = []
 
-        while let currentURL = pending.popLast() {
+        while let pendingScan = pending.popLast() {
+            let currentURL = pendingScan.url
             let currentKey = currentURL.resolvingSymlinksInPath().standardized.path
-            guard !visited.contains(currentKey) else { continue }
-            visited.insert(currentKey)
+            guard !pendingScan.ancestorResolvedPaths.contains(currentKey) else { continue }
+
+            let scanContext = IncludeScanContext(
+                resolvedPath: currentKey,
+                logicalDirectoryPath: currentURL.deletingLastPathComponent().standardized.path
+            )
+            guard scannedContexts.insert(scanContext).inserted else { continue }
+
+            var descendantResolvedPaths = pendingScan.ancestorResolvedPaths
+            descendantResolvedPaths.insert(currentKey)
 
             let includePaths = try VerilogAIncludeScanner.includePaths(
                 in: currentURL.resolvingSymlinksInPath()
@@ -563,8 +584,11 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 }
 
                 let includeScanKey = includeURL.resolvingSymlinksInPath().standardized.path
-                if !visited.contains(includeScanKey) {
-                    pending.append(includeURL)
+                if !descendantResolvedPaths.contains(includeScanKey) {
+                    pending.append(PendingIncludeScan(
+                        url: includeURL,
+                        ancestorResolvedPaths: descendantResolvedPaths
+                    ))
                 }
             }
         }

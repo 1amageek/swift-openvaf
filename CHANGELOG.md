@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.4.3 - 2026-06-04
+
+### Fixed
+
+- Preserve logical-directory-specific local include discovery when the same resolved Verilog-A file is included through multiple symlink aliases.
+
 ## 0.4.2 - 2026-06-04
 
 ### Fixed

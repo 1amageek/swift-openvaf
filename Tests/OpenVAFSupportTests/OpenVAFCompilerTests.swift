@@ -913,6 +913,70 @@ module model; endmodule
         #expect(commands.filter { $0.arguments == ["model.va"] }.count == 1)
     }
 
+    @Test("Compile scans same resolved include through distinct logical directories")
+    func compileScansSameResolvedIncludeThroughDistinctLogicalDirectories() async throws {
+        let sandbox = try TemporaryDirectory(name: "include-symlink-aliases")
+        defer { sandbox.remove() }
+
+        let sharedDirectory = sandbox.url.appendingPathComponent("shared")
+        let aliasAURL = sandbox.url.appendingPathComponent("a")
+        let aliasBURL = sandbox.url.appendingPathComponent("b")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try FileManager.default.createDirectory(at: sharedDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: aliasAURL, withDestinationURL: sharedDirectory)
+        try FileManager.default.createSymbolicLink(at: aliasBURL, withDestinationURL: sharedDirectory)
+
+        let sourceURL = sandbox.url.appendingPathComponent("top.va")
+        let sharedSourceURL = sharedDirectory.appendingPathComponent("model.va")
+        let sharedDefsURL = sharedDirectory.appendingPathComponent("defs.inc")
+        try """
+`include "a/model.va"
+`include "b/model.va"
+module top; endmodule
+""".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try """
+`include "defs.inc"
+module model; endmodule
+""".write(to: sharedSourceURL, atomically: true, encoding: .utf8)
+        try "`define MODEL_GAIN 1\n".write(to: sharedDefsURL, atomically: true, encoding: .utf8)
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            let stagedAliasADefsURL = command.workingDirectory.appendingPathComponent("a/defs.inc")
+            let stagedAliasBDefsURL = command.workingDirectory.appendingPathComponent("b/defs.inc")
+            #expect(FileManager.default.fileExists(atPath: stagedAliasADefsURL.path))
+            #expect(FileManager.default.fileExists(atPath: stagedAliasBDefsURL.path))
+
+            let outputURL = command.workingDirectory.appendingPathComponent("top.osdi")
+            try Data("osdi".utf8).write(to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: runner
+        )
+
+        let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+
+        #expect(artifact.outputURL.lastPathComponent == "top.osdi")
+    }
+
     @Test("Compile rejects local include symlinks that resolve outside the include root")
     func compileRejectsLocalIncludeSymlinksOutsideTheIncludeRoot() async throws {
         let sandbox = try TemporaryDirectory(name: "outside-include-root-symlink")
