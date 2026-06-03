@@ -38,13 +38,22 @@ flowchart LR
 Add `OpenVAFSupport` as a SwiftPM dependency.
 
 ```swift
-.package(path: "../swift-openvaf")
+.package(
+    url: "https://github.com/1amageek/swift-openvaf.git",
+    from: "0.1.0"
+)
 ```
 
 Then add the product to your target.
 
 ```swift
 .product(name: "OpenVAFSupport", package: "swift-openvaf")
+```
+
+For local development, use a path dependency.
+
+```swift
+.package(path: "../swift-openvaf")
 ```
 
 ## Executable Discovery
