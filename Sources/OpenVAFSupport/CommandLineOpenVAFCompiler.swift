@@ -378,6 +378,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 message: "Output directory URL must be a file URL"
             )
         }
+        try validateOutputDirectory(outputDirectory)
 
         if let includeRootDirectory = request.includeRootDirectory {
             guard includeRootDirectory.isFileURL else {
@@ -804,6 +805,21 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                     message: "Output file name would collide with a staged include"
                 )
             }
+        }
+    }
+
+    private func validateOutputDirectory(_ outputDirectory: URL) throws(OpenVAFError) {
+        var isDirectory = ObjCBool(false)
+        guard FileManager.default.fileExists(atPath: outputDirectory.path, isDirectory: &isDirectory) else {
+            return
+        }
+
+        guard isDirectory.boolValue else {
+            throw .fileSystemFailure(
+                operation: "validate output directory",
+                path: outputDirectory.path,
+                message: "Output directory must be a directory"
+            )
         }
     }
 

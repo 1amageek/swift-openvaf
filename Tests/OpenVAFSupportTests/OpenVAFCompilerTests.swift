@@ -421,6 +421,65 @@ struct CommandLineOpenVAFCompilerTests {
         }
     }
 
+    @Test("Compile rejects existing output files before launching")
+    func compileRejectsExistingOutputFilesBeforeLaunching() async throws {
+        let sandbox = try TemporaryDirectory(name: "output-directory-file")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "not a directory\n".write(to: outputDirectory, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when the output directory path is a file")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "validate output directory",
+            path: outputDirectory.path,
+            message: "Output directory must be a directory"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        let output = try String(contentsOf: outputDirectory, encoding: .utf8)
+        #expect(output == "not a directory\n")
+    }
+
+    @Test("Compile rejects existing output files before reading source")
+    func compileRejectsExistingOutputFilesBeforeReadingSource() async throws {
+        let sandbox = try TemporaryDirectory(name: "output-directory-file-before-source")
+        defer { sandbox.remove() }
+
+        let missingSourceURL = sandbox.url.appendingPathComponent("missing.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "not a directory\n".write(to: outputDirectory, atomically: true, encoding: .utf8)
+        let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
+            processEnvironment: ["PATH": sandbox.url.path]
+        ))
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "validate output directory",
+            path: outputDirectory.path,
+            message: "Output directory must be a directory"
+        )) {
+            try await compiler.compile(sourceAt: missingSourceURL, to: outputDirectory)
+        }
+        let output = try String(contentsOf: outputDirectory, encoding: .utf8)
+        #expect(output == "not a directory\n")
+    }
+
     @Test("Compile rejects non-file include root URLs before launching")
     func compileRejectsNonFileIncludeRootURLsBeforeLaunching() async throws {
         let sandbox = try TemporaryDirectory(name: "non-file-include-root-url")

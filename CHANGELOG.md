@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.6.3 - 2026-06-04
+
+### Fixed
+
+- Reject existing non-directory output paths before reading sources, scanning includes, resolving OpenVAF, or launching a process.
+
 ## 0.6.2 - 2026-06-04
 
 ### Fixed
