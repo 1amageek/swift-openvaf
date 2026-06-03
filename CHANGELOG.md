@@ -4,6 +4,13 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.7.1 - 2026-06-04
+
+### Fixed
+
+- Revalidate local include symlinks immediately before staging and copy from the validated resolved file path, so an include cannot be swapped outside `includeRootDirectory` after discovery but before staging.
+- Update SwiftPM installation guidance to start from 0.7.1.
+
 ## 0.7.0 - 2026-06-04
 
 ### Changed

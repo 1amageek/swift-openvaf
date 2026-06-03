@@ -1667,6 +1667,80 @@ module model; endmodule
         #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
     }
 
+    @Test("Compile rejects include symlinks swapped outside the include root before staging")
+    func compileRejectsIncludeSymlinksSwappedOutsideTheIncludeRootBeforeStaging() async throws {
+        let sandbox = try TemporaryDirectory(name: "include-symlink-swap-before-stage")
+        defer { sandbox.remove() }
+
+        let projectDirectory = sandbox.url.appendingPathComponent("project")
+        let sourceDirectory = projectDirectory.appendingPathComponent("models")
+        let includeDirectory = projectDirectory.appendingPathComponent("include")
+        let outsideDirectory = sandbox.url.appendingPathComponent("outside")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: includeDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outsideDirectory, withIntermediateDirectories: true)
+
+        let sourceURL = sourceDirectory.appendingPathComponent("model.va")
+        let validIncludeURL = includeDirectory.appendingPathComponent("valid-defs.inc")
+        let outsideIncludeURL = outsideDirectory.appendingPathComponent("secret.inc")
+        let symlinkIncludeURL = includeDirectory.appendingPathComponent("defs.inc")
+        let executableURL = sandbox.url.appendingPathComponent("openvaf")
+        try """
+`include "../include/defs.inc"
+module model; endmodule
+""".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "`define MODEL_OFFSET 2\n".write(to: validIncludeURL, atomically: true, encoding: .utf8)
+        try "`define SECRET 1\n".write(to: outsideIncludeURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: symlinkIncludeURL,
+            withDestinationURL: validIncludeURL
+        )
+        try writeExecutableMarker("stable", to: executableURL)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: SwappingIncludeExecutableResolver(
+                executableURL: executableURL,
+                symlinkURL: symlinkIncludeURL,
+                replacementTargetURL: outsideIncludeURL
+            ),
+            processRunner: RecordingProcessRunner { command in
+                if command.arguments == ["--version"] {
+                    return OpenVAFProcessResult(
+                        exitCode: 0,
+                        standardOutput: "OpenVAF 1.2.3\n",
+                        standardError: "",
+                        startedAt: Date(),
+                        finishedAt: Date()
+                    )
+                }
+
+                Issue.record("Runner should not be called when an include symlink escapes before staging")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "read include",
+            path: symlinkIncludeURL.path,
+            message: "Include is outside include root"
+        )) {
+            try await compiler.compile(OpenVAFCompilationRequest(
+                sourceURL: sourceURL,
+                outputDirectory: outputDirectory,
+                includeRootDirectory: projectDirectory
+            ))
+        }
+        #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
+    }
+
     @Test("Compile rejects output file names that collide with staged includes")
     func compileRejectsOutputFileNamesThatCollideWithStagedIncludes() async throws {
         let sandbox = try TemporaryDirectory(name: "staged-source-include-collision")
@@ -3068,6 +3142,34 @@ private struct DeletingExecutableResolver: OpenVAFExecutableResolving {
             )
         }
         return url
+    }
+}
+
+private struct SwappingIncludeExecutableResolver: OpenVAFExecutableResolving {
+    let executableURL: URL
+    let symlinkURL: URL
+    let replacementTargetURL: URL
+
+    func resolve(
+        _ executable: OpenVAFExecutable,
+        environment: [String: String]
+    ) throws(OpenVAFError) -> URL {
+        do {
+            if FileManager.default.fileExists(atPath: symlinkURL.path) {
+                try FileManager.default.removeItem(at: symlinkURL)
+            }
+            try FileManager.default.createSymbolicLink(
+                at: symlinkURL,
+                withDestinationURL: replacementTargetURL
+            )
+        } catch {
+            throw .fileSystemFailure(
+                operation: "swap include",
+                path: symlinkURL.path,
+                message: error.localizedDescription
+            )
+        }
+        return executableURL
     }
 }
 

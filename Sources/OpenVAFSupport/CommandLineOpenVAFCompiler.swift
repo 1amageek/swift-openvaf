@@ -708,8 +708,22 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             return nil
         }
 
+        _ = try validatedIncludeCopySourceURL(
+            includeURL,
+            includeRootDirectory: includeRootDirectory
+        )
+        return includeURL
+    }
+
+    private func validatedIncludeCopySourceURL(
+        _ includeURL: URL,
+        includeRootDirectory: URL
+    ) throws(OpenVAFError) -> URL {
+        let resolvedIncludeURL = includeURL.resolvingSymlinksInPath()
+        let resolvedIncludeRootDirectory = includeRootDirectory.resolvingSymlinksInPath()
+
         guard isPath(includeURL, inside: includeRootDirectory),
-              isResolvedPath(includeURL, inside: includeRootDirectory) else {
+              isPath(resolvedIncludeURL, inside: resolvedIncludeRootDirectory) else {
             throw .fileSystemFailure(
                 operation: "read include",
                 path: includeURL.path,
@@ -717,11 +731,11 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             )
         }
 
-        try validateIncludeFile(at: includeURL)
-        return includeURL
+        try validateIncludeFile(at: includeURL, resolvedURL: resolvedIncludeURL)
+        return resolvedIncludeURL
     }
 
-    private func validateIncludeFile(at includeURL: URL) throws(OpenVAFError) {
+    private func validateIncludeFile(at includeURL: URL, resolvedURL: URL) throws(OpenVAFError) {
         var isDirectory = ObjCBool(false)
         guard FileManager.default.fileExists(atPath: includeURL.path, isDirectory: &isDirectory),
               !isDirectory.boolValue else {
@@ -740,11 +754,22 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             )
         }
 
-        guard isRegularFile(at: includeURL) else {
+        do {
+            let values = try resolvedURL.resourceValues(forKeys: [.isRegularFileKey])
+            guard values.isRegularFile == true else {
+                throw OpenVAFError.fileSystemFailure(
+                    operation: "read include",
+                    path: includeURL.path,
+                    message: "Include must be a regular file"
+                )
+            }
+        } catch let error as OpenVAFError {
+            throw error
+        } catch {
             throw .fileSystemFailure(
                 operation: "read include",
                 path: includeURL.path,
-                message: "Include must be a regular file"
+                message: error.localizedDescription
             )
         }
     }
@@ -759,6 +784,10 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             let relativeIncludePath = try relativePath(from: sourceRootDirectory, to: includeURL)
             let stagedIncludeURL = appendingRelativePath(relativeIncludePath, to: stagingRootDirectory)
             guard stagedIncludeURL != stagedSourceURL else { continue }
+            let copySourceURL = try validatedIncludeCopySourceURL(
+                includeURL,
+                includeRootDirectory: sourceRootDirectory
+            )
 
             do {
                 try FileManager.default.createDirectory(
@@ -766,7 +795,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                     withIntermediateDirectories: true
                 )
                 try FileManager.default.copyItem(
-                    at: includeURL.resolvingSymlinksInPath(),
+                    at: copySourceURL,
                     to: stagedIncludeURL
                 )
             } catch {
