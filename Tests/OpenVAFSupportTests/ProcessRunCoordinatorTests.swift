@@ -71,4 +71,53 @@ struct ProcessRunCoordinatorTests {
         #expect(result.exitCode == 0)
         #expect(result.standardOutput == "ok")
     }
+
+    @Test("Coordinator preserves normal exits after cancellation requests")
+    func coordinatorPreservesNormalExitsAfterCancellationRequests() async throws {
+        let coordinator = ProcessRunCoordinator(
+            executablePath: "/bin/openvaf",
+            timeout: .seconds(5),
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+
+        await coordinator.requestTermination(.cancelled)
+        await coordinator.recordExit(2, reason: .exit)
+        await coordinator.recordOutput(Data("out".utf8))
+        await coordinator.recordError(Data("err".utf8))
+
+        let result = try await coordinator.waitForResult()
+
+        #expect(result.exitCode == 2)
+        #expect(result.standardOutput == "out")
+        #expect(result.standardError == "err")
+    }
+
+    @Test("Coordinator maps signal exits after cancellation requests")
+    func coordinatorMapsSignalExitsAfterCancellationRequests() async throws {
+        let coordinator = ProcessRunCoordinator(
+            executablePath: "/bin/openvaf",
+            timeout: .seconds(5),
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+
+        await coordinator.requestTermination(.cancelled)
+        await coordinator.recordExit(SIGTERM, reason: .uncaughtSignal)
+        await coordinator.recordOutput(Data("partial".utf8))
+        await coordinator.recordError(Data())
+
+        do {
+            _ = try await coordinator.waitForResult()
+            Issue.record("Expected cancellation")
+        } catch let error as OpenVAFProcessError {
+            switch error {
+            case .cancelled(_, let standardOutput, let standardError, _, _):
+                #expect(standardOutput == "partial")
+                #expect(standardError == "")
+            case .launchFailed, .timedOut:
+                Issue.record("Expected cancellation, got \(error)")
+            }
+        } catch {
+            Issue.record("Expected OpenVAFProcessError, got \(error)")
+        }
+    }
 }

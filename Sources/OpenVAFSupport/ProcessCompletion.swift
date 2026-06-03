@@ -8,6 +8,12 @@ package enum ProcessCompletion: Sendable {
     case cancelled
 }
 
+package enum ProcessExitReason: Sendable {
+    case exit
+    case uncaughtSignal
+    case unknown
+}
+
 package enum ProcessTerminationRequest: Sendable {
     case timedOut
     case cancelled
@@ -118,6 +124,7 @@ package actor ProcessRunCoordinator {
     private var didFinishOutput = false
     private var didFinishError = false
     private var exitCode: Int32?
+    private var exitReason: ProcessExitReason?
     private var terminationRequest: ProcessTerminationRequest?
     private var immediateCompletion: ProcessCompletion?
     private var continuation: CheckedContinuation<OpenVAFProcessResult, any Error>?
@@ -151,8 +158,9 @@ package actor ProcessRunCoordinator {
         finishIfReady()
     }
 
-    package func recordExit(_ status: Int32) {
+    package func recordExit(_ status: Int32, reason: ProcessExitReason = .exit) {
         exitCode = status
+        exitReason = reason
         finishIfReady()
     }
 
@@ -185,7 +193,7 @@ package actor ProcessRunCoordinator {
             return
         }
 
-        guard let exitCode, didFinishOutput, didFinishError else { return }
+        guard let exitCode, let exitReason, didFinishOutput, didFinishError else { return }
 
         self.continuation = nil
         let completion: ProcessCompletion
@@ -193,7 +201,12 @@ package actor ProcessRunCoordinator {
         case .timedOut:
             completion = .timedOut
         case .cancelled:
-            completion = .cancelled
+            switch exitReason {
+            case .uncaughtSignal:
+                completion = .cancelled
+            case .exit, .unknown:
+                completion = .exited(exitCode)
+            }
         case nil:
             completion = .exited(exitCode)
         }

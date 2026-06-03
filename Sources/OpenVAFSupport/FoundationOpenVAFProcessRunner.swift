@@ -40,7 +40,8 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
 
             process.terminationHandler = { terminatedProcess in
                 let status = terminatedProcess.terminationStatus
-                Task { await coordinator.recordExit(status) }
+                let reason = Self.exitReason(from: terminatedProcess)
+                Task { await coordinator.recordExit(status, reason: reason) }
             }
 
             do {
@@ -112,6 +113,17 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
     private static func closePipeHandles(outputPipe: Pipe, errorPipe: Pipe) {
         closeWriteHandles(outputPipe: outputPipe, errorPipe: errorPipe)
         closeReadHandles(outputPipe: outputPipe, errorPipe: errorPipe)
+    }
+
+    private static func exitReason(from process: Process) -> ProcessExitReason {
+        switch process.terminationReason {
+        case .exit:
+            .exit
+        case .uncaughtSignal:
+            .uncaughtSignal
+        @unknown default:
+            .unknown
+        }
     }
 
     private static func closeWriteHandles(outputPipe: Pipe, errorPipe: Pipe) {

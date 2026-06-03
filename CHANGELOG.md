@@ -4,6 +4,17 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.7.0 - 2026-06-04
+
+### Changed
+
+- Promote the reviewed reliability state to the 0.7 release series after revalidating process completion, timeout and cancellation handling, output draining, optional real OpenVAF E2E gating, and CI timeout behavior.
+- Update SwiftPM installation guidance to start from 0.7.0.
+
+### Fixed
+
+- Preserve a direct process's normal exit result when task cancellation arrives after the process has already exited but before Foundation has delivered the exit notification.
+
 ## 0.6.6 - 2026-06-04
 
 ### Fixed
