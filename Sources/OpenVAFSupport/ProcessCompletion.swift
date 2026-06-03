@@ -16,6 +16,8 @@ package enum ProcessTerminationRequest: Sendable {
 package actor ProcessController {
     private let process: Process
     private var didStart = false
+    private var pendingTermination = false
+    private var pendingForceKill = false
 
     package init(process: Process) {
         self.process = process
@@ -24,16 +26,35 @@ package actor ProcessController {
     package func run() throws {
         try process.run()
         didStart = true
+        applyPendingTermination()
     }
 
     package func terminate() {
-        guard didStart, process.isRunning else { return }
+        guard didStart else {
+            pendingTermination = true
+            return
+        }
+        guard process.isRunning else { return }
         process.terminate()
     }
 
     package func forceKillIfRunning() {
-        guard didStart, process.isRunning else { return }
+        guard didStart else {
+            pendingTermination = true
+            pendingForceKill = true
+            return
+        }
+        guard process.isRunning else { return }
         kill(process.processIdentifier, SIGKILL)
+    }
+
+    private func applyPendingTermination() {
+        guard process.isRunning else { return }
+        if pendingForceKill {
+            kill(process.processIdentifier, SIGKILL)
+        } else if pendingTermination {
+            process.terminate()
+        }
     }
 }
 

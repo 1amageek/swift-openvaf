@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.2.6 - 2026-06-04
+
+### Fixed
+
+- Preserve pre-start process termination and force-kill requests so cancellation or timeout signals are still applied when they arrive immediately before process launch completes.
+
 ## 0.2.5 - 2026-06-04
 
 ### Changed
