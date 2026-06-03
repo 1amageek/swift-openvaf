@@ -4,9 +4,15 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.3.0 - 2026-06-04
+
 ### Added
 
 - Add an integration test that runs a fake OpenVAF executable through the real resolver, process runner, staging, and artifact path.
+
+### Fixed
+
+- Avoid reporting cancellation after the direct OpenVAF process has already exited but before output pipes finish draining.
 
 ## 0.2.9 - 2026-06-04
 

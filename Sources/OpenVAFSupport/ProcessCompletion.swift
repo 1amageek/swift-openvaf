@@ -30,22 +30,32 @@ package actor ProcessController {
     }
 
     package func terminate() {
+        _ = terminateIfRunningOrPendingStart()
+    }
+
+    package func terminateIfRunningOrPendingStart() -> Bool {
         guard didStart else {
             pendingTermination = true
-            return
+            return true
         }
-        guard process.isRunning else { return }
+        guard process.isRunning else { return false }
         process.terminate()
+        return true
     }
 
     package func forceKillIfRunning() {
+        _ = forceKillIfRunningOrPendingStart()
+    }
+
+    package func forceKillIfRunningOrPendingStart() -> Bool {
         guard didStart else {
             pendingTermination = true
             pendingForceKill = true
-            return
+            return true
         }
-        guard process.isRunning else { return }
+        guard process.isRunning else { return false }
         kill(process.processIdentifier, SIGKILL)
+        return true
     }
 
     package func isRunning() -> Bool {

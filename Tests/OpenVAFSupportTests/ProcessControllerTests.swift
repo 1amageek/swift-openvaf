@@ -33,6 +33,34 @@ struct ProcessControllerTests {
         #expect(!process.isRunning)
     }
 
+    @Test("Controller refuses termination after process exit")
+    func controllerRefusesTerminationAfterProcessExit() async throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        let controller = ProcessController(process: process)
+
+        try await controller.run()
+        process.waitUntilExit()
+
+        let didRequestTermination = await controller.terminateIfRunningOrPendingStart()
+
+        #expect(!didRequestTermination)
+    }
+
+    @Test("Controller refuses force kill after process exit")
+    func controllerRefusesForceKillAfterProcessExit() async throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        let controller = ProcessController(process: process)
+
+        try await controller.run()
+        process.waitUntilExit()
+
+        let didRequestForceKill = await controller.forceKillIfRunningOrPendingStart()
+
+        #expect(!didRequestForceKill)
+    }
+
     private func waitUntilProcessStops(_ process: Process) async throws {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(1))

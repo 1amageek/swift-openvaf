@@ -214,4 +214,29 @@ struct FoundationOpenVAFProcessRunnerTests {
             Issue.record("Expected OpenVAFProcessError, got \(error)")
         }
     }
+
+    @Test("Run ignores cancellation after the direct process already exited")
+    func runIgnoresCancellationAfterTheDirectProcessAlreadyExited() async throws {
+        let runner = FoundationOpenVAFProcessRunner()
+        let command = OpenVAFProcessCommand(
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "(sleep 1) & printf done"],
+            environment: nil,
+            workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            timeout: .seconds(5),
+            terminationGrace: .milliseconds(10)
+        )
+
+        let task = Task {
+            try await runner.run(command)
+        }
+
+        try await ContinuousClock().sleep(for: .milliseconds(50))
+        task.cancel()
+
+        let result = try await task.value
+
+        #expect(result.exitCode == 0)
+        #expect(result.standardOutput == "done")
+    }
 }

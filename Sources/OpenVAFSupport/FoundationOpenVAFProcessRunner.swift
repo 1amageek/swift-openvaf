@@ -97,8 +97,8 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
         } onCancel: {
             timeoutTask.cancel()
             Task {
+                guard await controller.terminateIfRunningOrPendingStart() else { return }
                 await coordinator.requestTermination(.cancelled)
-                await controller.terminate()
                 do {
                     try await ContinuousClock().sleep(for: terminationGrace)
                 } catch {
