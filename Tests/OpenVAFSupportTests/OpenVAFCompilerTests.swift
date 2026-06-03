@@ -886,6 +886,44 @@ module model; endmodule
         #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
     }
 
+    @Test("Compile rejects output paths that collide with staged includes")
+    func compileRejectsOutputPathsThatCollideWithStagedIncludes() async throws {
+        let sandbox = try TemporaryDirectory(name: "staged-output-include-collision")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        let includeURL = sandbox.url.appendingPathComponent("model.osdi")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try """
+`include "model.osdi"
+module model; endmodule
+""".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "not generated output\n".write(to: includeURL, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when output file name collides with a staged include")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.invalidOutputFileName(
+            "model.osdi",
+            message: "Output file name would collide with a staged include"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
     @Test("Compile hashes source larger than digest chunk")
     func compileHashesSourceLargerThanDigestChunk() async throws {
         let sandbox = try TemporaryDirectory(name: "large-source-hash")

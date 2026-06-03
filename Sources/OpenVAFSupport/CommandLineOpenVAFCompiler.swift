@@ -704,13 +704,22 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             from: includeRootDirectory,
             to: stagedSourceURL
         )
+        let outputURL = sourceURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(outputFileName)
+            .standardized
+        let outputRelativePath = try relativePath(
+            from: includeRootDirectory,
+            to: outputURL
+        )
 
         for includeURL in includeURLs {
             let includeRelativePath = try relativePath(
                 from: includeRootDirectory,
                 to: includeURL
             )
-            guard includeRelativePath != stagedSourceRelativePath else {
+            guard includeRelativePath != stagedSourceRelativePath,
+                  includeRelativePath != outputRelativePath else {
                 throw .invalidOutputFileName(
                     outputFileName,
                     message: "Output file name would collide with a staged include"

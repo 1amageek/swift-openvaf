@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.3.2 - 2026-06-04
+
+### Fixed
+
+- Reject local include files that would be staged at the expected OSDI output path.
+
 ## 0.3.1 - 2026-06-04
 
 ### Fixed
