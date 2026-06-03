@@ -4,6 +4,13 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.6.4 - 2026-06-04
+
+### Fixed
+
+- Reject source, output directory, and include root file URLs with non-local hosts, empty paths, or paths containing NUL before reading sources, scanning includes, resolving OpenVAF, staging files, or launching a process.
+- Normalize percent-encoded parent markers in request file URLs while preserving symlink source names for artifact records and staged source names.
+
 ## 0.6.3 - 2026-06-04
 
 ### Fixed

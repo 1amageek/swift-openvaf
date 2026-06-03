@@ -335,6 +335,51 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         value.contains("\0")
     }
 
+    private func validatedRequestFileURL(
+        _ url: URL,
+        operation: String,
+        nonFileMessage: String,
+        nulMessage: String
+    ) throws(OpenVAFError) -> URL {
+        guard url.isFileURL else {
+            throw .fileSystemFailure(
+                operation: operation,
+                path: url.absoluteString,
+                message: nonFileMessage
+            )
+        }
+
+        if let host = url.host(),
+           !host.isEmpty,
+           host.lowercased() != "localhost" {
+            throw .fileSystemFailure(
+                operation: operation,
+                path: url.absoluteString,
+                message: "File URL host must be empty or localhost"
+            )
+        }
+
+        let decodedPath = url.path(percentEncoded: false)
+        guard !containsNUL(decodedPath) else {
+            throw .fileSystemFailure(
+                operation: operation,
+                path: url.path(percentEncoded: true),
+                message: nulMessage
+            )
+        }
+
+        let path = url.path
+        guard !path.isEmpty else {
+            throw .fileSystemFailure(
+                operation: operation,
+                path: url.absoluteString,
+                message: "File URL path must not be empty"
+            )
+        }
+
+        return URL(fileURLWithPath: path).standardized
+    }
+
     private func validatePositiveDuration(
         _ duration: Duration,
         field: String
@@ -361,33 +406,30 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
 
     private func validate(_ request: OpenVAFCompilationRequest) throws(OpenVAFError) -> ValidatedSource {
         let fileManager = FileManager.default
-        let outputDirectory = request.outputDirectory
-        let sourceURL = request.sourceURL
-        guard sourceURL.isFileURL else {
-            throw .fileSystemFailure(
-                operation: "validate source",
-                path: sourceURL.absoluteString,
-                message: "Source URL must be a file URL"
-            )
-        }
-
-        guard outputDirectory.isFileURL else {
-            throw .fileSystemFailure(
-                operation: "validate output directory",
-                path: outputDirectory.absoluteString,
-                message: "Output directory URL must be a file URL"
-            )
-        }
+        let sourceURL = try validatedRequestFileURL(
+            request.sourceURL,
+            operation: "validate source",
+            nonFileMessage: "Source URL must be a file URL",
+            nulMessage: "Source path must not contain NUL"
+        )
+        let outputDirectory = try validatedRequestFileURL(
+            request.outputDirectory,
+            operation: "validate output directory",
+            nonFileMessage: "Output directory URL must be a file URL",
+            nulMessage: "Output directory path must not contain NUL"
+        )
         try validateOutputDirectory(outputDirectory)
 
+        let requestedIncludeRootDirectory: URL?
         if let includeRootDirectory = request.includeRootDirectory {
-            guard includeRootDirectory.isFileURL else {
-                throw .fileSystemFailure(
-                    operation: "validate include root",
-                    path: includeRootDirectory.absoluteString,
-                    message: "Include root URL must be a file URL"
-                )
-            }
+            requestedIncludeRootDirectory = try validatedRequestFileURL(
+                includeRootDirectory,
+                operation: "validate include root",
+                nonFileMessage: "Include root URL must be a file URL",
+                nulMessage: "Include root path must not contain NUL"
+            )
+        } else {
+            requestedIncludeRootDirectory = nil
         }
 
         let outputFileName = try validatedOutputFileName(
@@ -441,7 +483,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         }
 
         let includeRootDirectory = try validatedIncludeRootDirectory(
-            request.includeRootDirectory ?? sourceURL.deletingLastPathComponent(),
+            requestedIncludeRootDirectory ?? sourceURL.deletingLastPathComponent(),
             sourceDirectory: sourceURL.deletingLastPathComponent()
         )
         let includeURLs = try discoverLocalIncludeURLs(

@@ -519,6 +519,322 @@ struct CommandLineOpenVAFCompilerTests {
         #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
     }
 
+    @Test("Compile rejects non-local file source URL hosts before reading source")
+    func compileRejectsNonLocalFileSourceURLHostsBeforeReadingSource() async throws {
+        let sandbox = try TemporaryDirectory(name: "file-source-url-host")
+        defer { sandbox.remove() }
+
+        let sourceURL = URL(string: "file://example.com\(sandbox.url.path)/model.va")!
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when the source file URL host is not local")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "validate source",
+            path: sourceURL.absoluteString,
+            message: "File URL host must be empty or localhost"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
+    @Test("Compile rejects non-local file output directory URL hosts before staging")
+    func compileRejectsNonLocalFileOutputDirectoryURLHostsBeforeStaging() async throws {
+        let sandbox = try TemporaryDirectory(name: "file-output-url-host")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        let outputDirectory = URL(string: "file://example.com\(sandbox.url.path)/out")!
+        try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when the output directory file URL host is not local")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "validate output directory",
+            path: outputDirectory.absoluteString,
+            message: "File URL host must be empty or localhost"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: sandbox.url.appendingPathComponent("out").path))
+    }
+
+    @Test("Compile rejects non-local file include root URL hosts before reading source")
+    func compileRejectsNonLocalFileIncludeRootURLHostsBeforeReadingSource() async throws {
+        let sandbox = try TemporaryDirectory(name: "file-include-root-url-host")
+        defer { sandbox.remove() }
+
+        let missingSourceURL = sandbox.url.appendingPathComponent("missing.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        let includeRootDirectory = URL(string: "file://example.com\(sandbox.url.path)/project")!
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when the include root file URL host is not local")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "validate include root",
+            path: includeRootDirectory.absoluteString,
+            message: "File URL host must be empty or localhost"
+        )) {
+            try await compiler.compile(OpenVAFCompilationRequest(
+                sourceURL: missingSourceURL,
+                outputDirectory: outputDirectory,
+                includeRootDirectory: includeRootDirectory
+            ))
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
+    @Test("Compile rejects empty file source URL paths before reading source")
+    func compileRejectsEmptyFileSourceURLPathsBeforeReadingSource() async throws {
+        let sandbox = try TemporaryDirectory(name: "empty-file-source-url-path")
+        defer { sandbox.remove() }
+
+        let sourceURL = URL(string: "file://localhost")!
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when the source file URL path is empty")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "validate source",
+            path: sourceURL.absoluteString,
+            message: "File URL path must not be empty"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
+    @Test("Compile rejects empty file output directory URL paths before staging")
+    func compileRejectsEmptyFileOutputDirectoryURLPathsBeforeStaging() async throws {
+        let sandbox = try TemporaryDirectory(name: "empty-file-output-url-path")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        let outputDirectory = URL(string: "file://localhost")!
+        try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when the output directory file URL path is empty")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "validate output directory",
+            path: outputDirectory.absoluteString,
+            message: "File URL path must not be empty"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: sandbox.url.appendingPathComponent("out").path))
+    }
+
+    @Test("Compile rejects empty file include root URL paths before reading source")
+    func compileRejectsEmptyFileIncludeRootURLPathsBeforeReadingSource() async throws {
+        let sandbox = try TemporaryDirectory(name: "empty-file-include-root-url-path")
+        defer { sandbox.remove() }
+
+        let missingSourceURL = sandbox.url.appendingPathComponent("missing.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        let includeRootDirectory = URL(string: "file://localhost")!
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when the include root file URL path is empty")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "validate include root",
+            path: includeRootDirectory.absoluteString,
+            message: "File URL path must not be empty"
+        )) {
+            try await compiler.compile(OpenVAFCompilationRequest(
+                sourceURL: missingSourceURL,
+                outputDirectory: outputDirectory,
+                includeRootDirectory: includeRootDirectory
+            ))
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
+    @Test("Compile rejects source paths containing NUL before reading source")
+    func compileRejectsSourcePathsContainingNULBeforeReadingSource() async throws {
+        let sandbox = try TemporaryDirectory(name: "source-path-nul")
+        defer { sandbox.remove() }
+
+        let sourceURL = URL(string: sandbox.url
+            .appendingPathComponent("model.va")
+            .absoluteString
+            .replacingOccurrences(of: "model.va", with: "model%00.va"))!
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when the source path contains NUL")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "validate source",
+            path: sourceURL.path(percentEncoded: true),
+            message: "Source path must not contain NUL"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
+    @Test("Compile rejects output directory paths containing NUL before staging")
+    func compileRejectsOutputDirectoryPathsContainingNULBeforeStaging() async throws {
+        let sandbox = try TemporaryDirectory(name: "output-directory-path-nul")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        let outputDirectory = URL(string: sandbox.url
+            .appendingPathComponent("out")
+            .absoluteString + "%00")!
+        try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when the output directory path contains NUL")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "validate output directory",
+            path: outputDirectory.path(percentEncoded: true),
+            message: "Output directory path must not contain NUL"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path(percentEncoded: true)))
+    }
+
+    @Test("Compile rejects include root paths containing NUL before reading source")
+    func compileRejectsIncludeRootPathsContainingNULBeforeReadingSource() async throws {
+        let sandbox = try TemporaryDirectory(name: "include-root-path-nul")
+        defer { sandbox.remove() }
+
+        let missingSourceURL = sandbox.url.appendingPathComponent("missing.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        let includeRootDirectory = URL(string: sandbox.url
+            .appendingPathComponent("project")
+            .absoluteString + "%00")!
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when the include root path contains NUL")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "validate include root",
+            path: includeRootDirectory.path(percentEncoded: true),
+            message: "Include root path must not contain NUL"
+        )) {
+            try await compiler.compile(OpenVAFCompilationRequest(
+                sourceURL: missingSourceURL,
+                outputDirectory: outputDirectory,
+                includeRootDirectory: includeRootDirectory
+            ))
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
     @Test("Compile fingerprints explicit environment without delimiter collisions")
     func compileFingerprintsExplicitEnvironmentWithoutDelimiterCollisions() async throws {
         let sandbox = try TemporaryDirectory(name: "environment-fingerprint")
@@ -720,6 +1036,63 @@ struct CommandLineOpenVAFCompilerTests {
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
         #expect(artifact.sourceURL == sourceURL)
+        #expect(artifact.stagedSourceURL.lastPathComponent == "linked.va")
+        #expect(artifact.outputURL.lastPathComponent == "linked.osdi")
+    }
+
+    @Test("Compile normalizes encoded parent markers without resolving symlink source names")
+    func compileNormalizesEncodedParentMarkersWithoutResolvingSymlinkSourceNames() async throws {
+        let sandbox = try TemporaryDirectory(name: "encoded-parent-symlink-source")
+        defer { sandbox.remove() }
+
+        let sourceDirectory = sandbox.url.appendingPathComponent("src")
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+
+        let targetSourceURL = sandbox.url.appendingPathComponent("target.va")
+        let linkedSourceURL = sandbox.url.appendingPathComponent("linked.va")
+        let sourceURL = URL(string: sourceDirectory
+            .appendingPathComponent("placeholder")
+            .absoluteString
+            .replacingOccurrences(of: "placeholder", with: "%2e%2e/linked.va"))!
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module linked; endmodule\n".write(to: targetSourceURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: linkedSourceURL, withDestinationURL: targetSourceURL)
+
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            #expect(command.arguments == ["linked.va"])
+            let stagedSourceURL = command.workingDirectory.appendingPathComponent("linked.va")
+            let stagedSource = try String(contentsOf: stagedSourceURL, encoding: .utf8)
+            #expect(stagedSource == "module linked; endmodule\n")
+
+            let outputURL = command.workingDirectory.appendingPathComponent("linked.osdi")
+            try Data("osdi".utf8).write(to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: runner
+        )
+
+        let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+
+        #expect(artifact.sourceURL == linkedSourceURL.standardized)
         #expect(artifact.stagedSourceURL.lastPathComponent == "linked.va")
         #expect(artifact.outputURL.lastPathComponent == "linked.osdi")
     }
