@@ -57,3 +57,6 @@ jobs:
 
       - name: Test
         run: scripts/swift-test-timeout.sh 30 swift test --skip-build
+
+      - name: Thread Sanitizer
+        run: scripts/swift-test-timeout.sh 90 swift test --sanitize=thread
