@@ -4,6 +4,18 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.2.2 - 2026-06-04
+
+### Changed
+
+- Bound local Verilog-A include staging to `OpenVAFCompilationRequest.includeRootDirectory`, defaulting to the source directory.
+- Require callers to pass `includeRootDirectory` for parent-relative local include layouts.
+
+### Fixed
+
+- Reject existing local include files outside the include root before staging to avoid retaining unintended files in compile artifacts.
+- Resolve local include symlinks for boundary checks while preserving their source-relative staged layout.
+
 ## 0.2.1 - 2026-06-04
 
 ### Fixed

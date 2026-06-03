@@ -610,12 +610,183 @@ module model; endmodule
         let artifact = try await compiler.compile(OpenVAFCompilationRequest(
             sourceURL: sourceURL,
             outputDirectory: outputDirectory,
-            outputFileName: "renamed.osdi"
+            outputFileName: "renamed.osdi",
+            includeRootDirectory: projectDirectory
         ))
 
         #expect(artifact.stagedSourceURL.lastPathComponent == "renamed.va")
         #expect(artifact.stagedSourceURL.deletingLastPathComponent().lastPathComponent == "models")
         #expect(artifact.outputURL.lastPathComponent == "renamed.osdi")
+    }
+
+    @Test("Compile rejects local include files outside the include root")
+    func compileRejectsLocalIncludeFilesOutsideTheIncludeRoot() async throws {
+        let sandbox = try TemporaryDirectory(name: "outside-include-root")
+        defer { sandbox.remove() }
+
+        let projectDirectory = sandbox.url.appendingPathComponent("project")
+        let sourceDirectory = projectDirectory.appendingPathComponent("models")
+        let includeDirectory = projectDirectory.appendingPathComponent("include")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: includeDirectory, withIntermediateDirectories: true)
+
+        let sourceURL = sourceDirectory.appendingPathComponent("model.va")
+        let includeURL = includeDirectory.appendingPathComponent("defs.inc")
+        try """
+`include "../include/defs.inc"
+module model; endmodule
+""".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "`define MODEL_OFFSET 2\n".write(to: includeURL, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when include is outside the include root")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "read include",
+            path: includeURL.path,
+            message: "Include is outside include root"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
+    @Test("Compile stages local include symlink contents inside the include root")
+    func compileStagesLocalIncludeSymlinkContentsInsideTheIncludeRoot() async throws {
+        let sandbox = try TemporaryDirectory(name: "inside-include-root-symlink")
+        defer { sandbox.remove() }
+
+        let projectDirectory = sandbox.url.appendingPathComponent("project")
+        let sourceDirectory = projectDirectory.appendingPathComponent("models")
+        let includeDirectory = projectDirectory.appendingPathComponent("include")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: includeDirectory, withIntermediateDirectories: true)
+
+        let sourceURL = sourceDirectory.appendingPathComponent("model.va")
+        let realIncludeURL = includeDirectory.appendingPathComponent("real-defs.inc")
+        let symlinkIncludeURL = includeDirectory.appendingPathComponent("defs.inc")
+        try """
+`include "../include/defs.inc"
+module model; endmodule
+""".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "`define MODEL_OFFSET 2\n".write(to: realIncludeURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: symlinkIncludeURL,
+            withDestinationURL: realIncludeURL
+        )
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { command in
+                if command.arguments == ["--version"] {
+                    return OpenVAFProcessResult(
+                        exitCode: 0,
+                        standardOutput: "OpenVAF 1.2.3\n",
+                        standardError: "",
+                        startedAt: Date(),
+                        finishedAt: Date()
+                    )
+                }
+
+                let stagedProjectDirectory = command.workingDirectory.deletingLastPathComponent()
+                let stagedIncludeURL = stagedProjectDirectory.appendingPathComponent("include/defs.inc")
+                let values = try stagedIncludeURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                #expect(values.isRegularFile == true)
+                #expect(values.isSymbolicLink != true)
+                let stagedInclude = try String(contentsOf: stagedIncludeURL, encoding: .utf8)
+                #expect(stagedInclude == "`define MODEL_OFFSET 2\n")
+
+                let outputURL = command.workingDirectory.appendingPathComponent("model.osdi")
+                try Data("osdi".utf8).write(to: outputURL)
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        let artifact = try await compiler.compile(OpenVAFCompilationRequest(
+            sourceURL: sourceURL,
+            outputDirectory: outputDirectory,
+            includeRootDirectory: projectDirectory
+        ))
+
+        #expect(artifact.stagedSourceURL.deletingLastPathComponent().lastPathComponent == "models")
+        #expect(artifact.outputURL.lastPathComponent == "model.osdi")
+    }
+
+    @Test("Compile rejects local include symlinks that resolve outside the include root")
+    func compileRejectsLocalIncludeSymlinksOutsideTheIncludeRoot() async throws {
+        let sandbox = try TemporaryDirectory(name: "outside-include-root-symlink")
+        defer { sandbox.remove() }
+
+        let projectDirectory = sandbox.url.appendingPathComponent("project")
+        let sourceDirectory = projectDirectory.appendingPathComponent("models")
+        let includeDirectory = projectDirectory.appendingPathComponent("include")
+        let outsideDirectory = sandbox.url.appendingPathComponent("outside")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: includeDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outsideDirectory, withIntermediateDirectories: true)
+
+        let sourceURL = sourceDirectory.appendingPathComponent("model.va")
+        let outsideIncludeURL = outsideDirectory.appendingPathComponent("defs.inc")
+        let symlinkIncludeURL = includeDirectory.appendingPathComponent("defs.inc")
+        try """
+`include "../include/defs.inc"
+module model; endmodule
+""".write(to: sourceURL, atomically: true, encoding: .utf8)
+        try "`define MODEL_OFFSET 2\n".write(to: outsideIncludeURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: symlinkIncludeURL,
+            withDestinationURL: outsideIncludeURL
+        )
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when include symlink escapes the include root")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.fileSystemFailure(
+            operation: "read include",
+            path: symlinkIncludeURL.path,
+            message: "Include is outside include root"
+        )) {
+            try await compiler.compile(OpenVAFCompilationRequest(
+                sourceURL: sourceURL,
+                outputDirectory: outputDirectory,
+                includeRootDirectory: projectDirectory
+            ))
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
     }
 
     @Test("Compile hashes source larger than digest chunk")

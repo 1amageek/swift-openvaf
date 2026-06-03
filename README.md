@@ -40,7 +40,7 @@ Add `OpenVAFSupport` as a SwiftPM dependency.
 ```swift
 .package(
     url: "https://github.com/1amageek/swift-openvaf.git",
-    from: "0.2.1"
+    from: "0.2.2"
 )
 ```
 
@@ -125,7 +125,18 @@ print(artifact.outputURL.lastPathComponent)
 
 Output file names must be plain `.osdi` file names. Path components are rejected.
 
-When the source uses local quoted Verilog-A includes, `OpenVAFSupport` stages the referenced files with the same relative layout so the staged source can still resolve them. Missing local include files are left to OpenVAF's own include resolution, which preserves support for built-in files such as `disciplines.vams`.
+When the source uses local quoted Verilog-A includes, `OpenVAFSupport` stages the referenced files with the same relative layout so the staged source can still resolve them. By default, only files inside the source file's directory are staged. Set `includeRootDirectory` when a project uses parent-relative local includes.
+
+```swift
+let artifact = try await compiler.compile(OpenVAFCompilationRequest(
+    sourceURL: URL(fileURLWithPath: "/path/to/project/models/model.va"),
+    outputDirectory: URL(fileURLWithPath: "/path/to/build/openvaf"),
+    outputFileName: "model.osdi",
+    includeRootDirectory: URL(fileURLWithPath: "/path/to/project")
+))
+```
+
+Existing local include files outside `includeRootDirectory` are rejected before staging. Symlinks are resolved for the boundary check, then staged as regular files at their source-relative include path. Missing local include files are left to OpenVAF's own include resolution, which preserves support for built-in files such as `disciplines.vams`.
 
 ## Failure Handling
 
@@ -209,6 +220,8 @@ let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
 | `keepsFailedWorkingDirectories` | `false` | Preserves failed staging directories when enabled |
 
 `compileTimeout` and `availabilityTimeout` must be greater than zero. `terminationGrace` must not be negative. Explicit environment keys and compiler arguments must be representable at the POSIX process boundary. Invalid configuration is reported as a typed error before staging or launching a process.
+
+`OpenVAFCompilationRequest.includeRootDirectory` controls which existing local include files may be staged. When omitted, it defaults to the source file's directory.
 
 ## Error Model
 

@@ -187,6 +187,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         let stagedSourceFileName: String
         let outputDirectory: URL
         let outputFileName: String
+        let includeRootDirectory: URL
         let includeURLs: [URL]
     }
 
@@ -390,7 +391,14 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             )
         }
 
-        let includeURLs = try discoverLocalIncludeURLs(startingAt: sourceURL)
+        let includeRootDirectory = try validatedIncludeRootDirectory(
+            request.includeRootDirectory ?? sourceURL.deletingLastPathComponent(),
+            sourceDirectory: sourceURL.deletingLastPathComponent()
+        )
+        let includeURLs = try discoverLocalIncludeURLs(
+            startingAt: sourceURL,
+            includeRootDirectory: includeRootDirectory
+        )
 
         return ValidatedSource(
             sourceURL: sourceURL,
@@ -400,16 +408,14 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             ),
             outputDirectory: outputDirectory,
             outputFileName: outputFileName,
+            includeRootDirectory: includeRootDirectory,
             includeURLs: includeURLs
         )
     }
 
     private func stage(_ source: ValidatedSource) throws(OpenVAFError) -> PreparedSource {
         let fileManager = FileManager.default
-        let sourceRootDirectory = commonAncestorDirectory(
-            for: [source.sourceURL.deletingLastPathComponent()]
-                + source.includeURLs.map { $0.deletingLastPathComponent() }
-        )
+        let sourceRootDirectory = source.includeRootDirectory
         let stagingRootDirectory = source.outputDirectory.appendingPathComponent("openvaf-\(UUID().uuidString)")
         let sourceRelativeDirectory = try relativePath(
             from: sourceRootDirectory,
@@ -476,13 +482,44 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         )
     }
 
-    private func discoverLocalIncludeURLs(startingAt sourceURL: URL) throws(OpenVAFError) -> [URL] {
+    private func validatedIncludeRootDirectory(
+        _ includeRootDirectory: URL,
+        sourceDirectory: URL
+    ) throws(OpenVAFError) -> URL {
+        let standardizedRoot = includeRootDirectory.standardized
+        var isDirectory = ObjCBool(false)
+        guard FileManager.default.fileExists(atPath: standardizedRoot.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            throw .fileSystemFailure(
+                operation: "validate include root",
+                path: standardizedRoot.path,
+                message: "Include root must be an existing directory"
+            )
+        }
+
+        let standardizedSourceDirectory = sourceDirectory.standardized
+        guard isPath(standardizedSourceDirectory, inside: standardizedRoot),
+              isResolvedPath(standardizedSourceDirectory, inside: standardizedRoot) else {
+            throw .fileSystemFailure(
+                operation: "validate include root",
+                path: standardizedRoot.path,
+                message: "Include root must contain the source directory"
+            )
+        }
+
+        return standardizedRoot
+    }
+
+    private func discoverLocalIncludeURLs(
+        startingAt sourceURL: URL,
+        includeRootDirectory: URL
+    ) throws(OpenVAFError) -> [URL] {
         var pending = [sourceURL]
         var visited: Set<String> = []
         var includes: [URL] = []
 
         while let currentURL = pending.popLast() {
-            let currentKey = currentURL.standardizedFileURL.path
+            let currentKey = currentURL.standardized.path
             guard !visited.contains(currentKey) else { continue }
             visited.insert(currentKey)
 
@@ -492,13 +529,14 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             for includePath in includePaths {
                 guard let includeURL = try localIncludeURL(
                     includePath,
-                    relativeTo: currentURL
+                    relativeTo: currentURL,
+                    includeRootDirectory: includeRootDirectory
                 ) else {
                     continue
                 }
 
-                let includeKey = includeURL.standardizedFileURL.path
-                if !includes.contains(where: { $0.standardizedFileURL.path == includeKey }) {
+                let includeKey = includeURL.standardized.path
+                if !includes.contains(where: { $0.standardized.path == includeKey }) {
                     includes.append(includeURL)
                 }
 
@@ -513,7 +551,8 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
 
     private func localIncludeURL(
         _ includePath: String,
-        relativeTo includingURL: URL
+        relativeTo includingURL: URL,
+        includeRootDirectory: URL
     ) throws(OpenVAFError) -> URL? {
         guard !containsNUL(includePath) else {
             throw .fileSystemFailure(
@@ -528,10 +567,19 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         let includeURL = includingURL
             .deletingLastPathComponent()
             .appendingPathComponent(includePath)
-            .standardizedFileURL
+            .standardized
 
         guard FileManager.default.fileExists(atPath: includeURL.path) else {
             return nil
+        }
+
+        guard isPath(includeURL, inside: includeRootDirectory),
+              isResolvedPath(includeURL, inside: includeRootDirectory) else {
+            throw .fileSystemFailure(
+                operation: "read include",
+                path: includeURL.path,
+                message: "Include is outside include root"
+            )
         }
 
         try validateIncludeFile(at: includeURL)
@@ -599,37 +647,9 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         }
     }
 
-    private func commonAncestorDirectory(for urls: [URL]) -> URL {
-        guard let firstURL = urls.first else {
-            return URL(fileURLWithPath: "/", isDirectory: true)
-        }
-
-        var commonComponents = firstURL.standardizedFileURL.pathComponents
-        for url in urls.dropFirst() {
-            let components = url.standardizedFileURL.pathComponents
-            var index = 0
-            while index < commonComponents.count,
-                  index < components.count,
-                  commonComponents[index] == components[index] {
-                index += 1
-            }
-            commonComponents = Array(commonComponents.prefix(index))
-        }
-
-        guard let firstComponent = commonComponents.first else {
-            return URL(fileURLWithPath: "/", isDirectory: true)
-        }
-
-        var result = URL(fileURLWithPath: firstComponent, isDirectory: true)
-        for component in commonComponents.dropFirst() {
-            result.appendPathComponent(component, isDirectory: true)
-        }
-        return result.standardizedFileURL
-    }
-
     private func relativePath(from rootURL: URL, to targetURL: URL) throws(OpenVAFError) -> String {
-        let rootComponents = rootURL.standardizedFileURL.pathComponents
-        let targetComponents = targetURL.standardizedFileURL.pathComponents
+        let rootComponents = rootURL.standardized.pathComponents
+        let targetComponents = targetURL.standardized.pathComponents
 
         guard targetComponents.count >= rootComponents.count,
               zip(rootComponents, targetComponents).allSatisfy({ $0 == $1 }) else {
@@ -648,6 +668,20 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
     private func appendingRelativePath(_ relativePath: String, to baseURL: URL) -> URL {
         guard !relativePath.isEmpty else { return baseURL }
         return baseURL.appendingPathComponent(relativePath)
+    }
+
+    private func isPath(_ candidateURL: URL, inside rootURL: URL) -> Bool {
+        let candidateComponents = candidateURL.standardized.pathComponents
+        let rootComponents = rootURL.standardized.pathComponents
+        guard candidateComponents.count >= rootComponents.count else { return false }
+        return zip(rootComponents, candidateComponents).allSatisfy { $0 == $1 }
+    }
+
+    private func isResolvedPath(_ candidateURL: URL, inside rootURL: URL) -> Bool {
+        isPath(
+            candidateURL.resolvingSymlinksInPath(),
+            inside: rootURL.resolvingSymlinksInPath()
+        )
     }
 
     private func validatedOutputFileName(
