@@ -72,7 +72,7 @@ module resistor(p, n);
     inout p, n;
     electrical p, n;
 
-    parameter real resistance = 1.0 from (0:inf);
+    parameter real resistance = 1.0;
 
     analog begin
         I(p, n) <+ V(p, n) / resistance;

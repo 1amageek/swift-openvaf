@@ -353,11 +353,28 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
     }
 
     private func environmentRecord(from environment: [String: String]) -> OpenVAFEnvironmentRecord {
-        OpenVAFEnvironmentRecord(
+        let recordedEnvironment = recordedEnvironment(from: environment)
+        return OpenVAFEnvironmentRecord(
             source: configuration.processEnvironment == nil ? .inherited : .explicit,
-            keys: Array(environment.keys),
-            valueSHA256: sha256HexDigest(of: environment)
+            keys: Array(recordedEnvironment.keys),
+            valueSHA256: sha256HexDigest(of: recordedEnvironment)
         )
+    }
+
+    private func recordedEnvironment(from environment: [String: String]) -> [String: String] {
+        guard configuration.processEnvironment == nil else {
+            return environment
+        }
+
+        let inheritedKeys = [
+            "OPENVAF_BIN",
+            "PATH",
+            "DYLD_LIBRARY_PATH",
+            "LD_LIBRARY_PATH",
+        ]
+        return environment.filter { key, _ in
+            inheritedKeys.contains(key)
+        }
     }
 
     private func availableInstallation(

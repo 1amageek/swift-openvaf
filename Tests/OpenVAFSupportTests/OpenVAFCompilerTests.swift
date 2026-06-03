@@ -160,6 +160,53 @@ struct CommandLineOpenVAFCompilerTests {
         #expect(FileManager.default.fileExists(atPath: artifact.outputURL.path))
     }
 
+    @Test("Compile records only relevant inherited environment metadata")
+    func compileRecordsOnlyRelevantInheritedEnvironmentMetadata() async throws {
+        let sandbox = try TemporaryDirectory(name: "inherited-environment-record")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("env.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module env; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let executableURL = sandbox.url.appendingPathComponent("openvaf")
+        let runner = RecordingProcessRunner { command in
+            if command.arguments == ["--version"] {
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "OpenVAF 1.2.3\n",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+
+            let outputURL = command.workingDirectory.appendingPathComponent("env.osdi")
+            try Data("osdi".utf8).write(to: outputURL)
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(),
+            executableResolver: StaticExecutableResolver(url: executableURL),
+            processRunner: runner
+        )
+
+        let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        let allowedKeys = Set(["OPENVAF_BIN", "PATH", "DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"])
+
+        #expect(artifact.command.environment.source == .inherited)
+        #expect(Set(artifact.command.environment.keys).isSubset(of: allowedKeys))
+        #expect(!artifact.command.environment.keys.contains("HOME"))
+        #expect(!artifact.command.environment.keys.contains("GITHUB_TOKEN"))
+        #expect(isSHA256Hex(artifact.command.environment.valueSHA256))
+    }
+
     @Test("Compile honors custom OSDI output file name")
     func compileHonorsCustomOSDIOutputFileName() async throws {
         let sandbox = try TemporaryDirectory(name: "custom-output-file-name")
