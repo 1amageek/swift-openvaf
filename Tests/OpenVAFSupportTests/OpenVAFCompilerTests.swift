@@ -64,6 +64,34 @@ struct CommandLineOpenVAFCompilerTests {
         }
     }
 
+    @Test("Availability skips OpenVAF-prefixed date-like tokens")
+    func availabilitySkipsOpenVAFPrefixedDateLikeTokens() async throws {
+        let executableURL = URL(fileURLWithPath: "/tmp/openvaf")
+        let runner = RecordingProcessRunner { _ in
+            OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "OpenVAF build 2026.01.15 version 1.2.3\n",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": "/tmp"]),
+            executableResolver: StaticExecutableResolver(url: executableURL),
+            processRunner: runner
+        )
+
+        let availability = await compiler.availability()
+
+        switch availability {
+        case .available(let installation):
+            #expect(installation.version == "1.2.3")
+        case .unavailable(let reason):
+            Issue.record("Expected available OpenVAF, got \(reason)")
+        }
+    }
+
     @Test("Availability reports missing executable without launching")
     func availabilityReportsMissingExecutable() async throws {
         let runner = RecordingProcessRunner { _ in

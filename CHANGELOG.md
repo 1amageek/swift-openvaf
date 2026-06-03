@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.4.1 - 2026-06-04
+
+### Fixed
+
+- Avoid recording OpenVAF build-date tokens as version metadata when `openvaf --version` prints the build date before the semantic version on an OpenVAF-prefixed line.
+
 ## 0.4.0 - 2026-06-04
 
 ### Changed

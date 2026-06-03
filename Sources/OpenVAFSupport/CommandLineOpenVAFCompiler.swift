@@ -1096,25 +1096,28 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
 
     private static func parseVersion(from output: String) -> String? {
         let pattern = #"(?i)\bopenvaf\b[^\n\r0-9]*([0-9]+(?:\.[0-9]+){1,3}(?:[-+][A-Za-z0-9._-]+)?)"#
-        if let version = firstRegexCapture(in: output, pattern: pattern) {
-            return version
+        for version in regexCaptures(in: output, pattern: pattern) {
+            if isPlausibleVersion(version) {
+                return version
+            }
         }
 
         let fallbackPattern = #"(?<![0-9.])([0-9]+(?:\.[0-9]+){1,3}(?:[-+][A-Za-z0-9._-]+)?)(?![0-9.])"#
         for version in regexCaptures(in: output, pattern: fallbackPattern) {
-            guard let major = version.split(separator: ".").first,
-                  let majorValue = Int(major),
-                  majorValue < 1000 else {
-                continue
+            if isPlausibleVersion(version) {
+                return version
             }
-            return version
         }
 
         return nil
     }
 
-    private static func firstRegexCapture(in text: String, pattern: String) -> String? {
-        regexCaptures(in: text, pattern: pattern).first
+    private static func isPlausibleVersion(_ version: String) -> Bool {
+        guard let major = version.split(separator: ".").first,
+              let majorValue = Int(major) else {
+            return false
+        }
+        return majorValue < 1000
     }
 
     private static func regexCaptures(in text: String, pattern: String) -> [String] {
