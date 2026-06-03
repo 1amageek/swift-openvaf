@@ -529,16 +529,25 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         }
 
         let standardizedSourceDirectory = sourceDirectory.standardized
-        guard isPath(standardizedSourceDirectory, inside: standardizedRoot),
-              isResolvedPath(standardizedSourceDirectory, inside: standardizedRoot) else {
-            throw .fileSystemFailure(
-                operation: "validate include root",
-                path: standardizedRoot.path,
-                message: "Include root must contain the source directory"
-            )
+        let resolvedRoot = standardizedRoot.resolvingSymlinksInPath().standardized
+        let resolvedSourceDirectory = standardizedSourceDirectory.resolvingSymlinksInPath().standardized
+        let sourceIsInsideResolvedRoot = isPath(resolvedSourceDirectory, inside: resolvedRoot)
+
+        if isPath(standardizedSourceDirectory, inside: standardizedRoot),
+           sourceIsInsideResolvedRoot {
+            return standardizedRoot
         }
 
-        return standardizedRoot
+        if isPath(standardizedSourceDirectory, inside: resolvedRoot),
+           sourceIsInsideResolvedRoot {
+            return resolvedRoot
+        }
+
+        throw .fileSystemFailure(
+            operation: "validate include root",
+            path: standardizedRoot.path,
+            message: "Include root must contain the source directory"
+        )
     }
 
     private func discoverLocalIncludeURLs(

@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.4.4 - 2026-06-04
+
+### Fixed
+
+- Accept symlinked include roots when the source path is passed through the resolved project directory, while preserving resolved-path containment checks before staging local includes.
+
 ## 0.4.3 - 2026-06-04
 
 ### Fixed
