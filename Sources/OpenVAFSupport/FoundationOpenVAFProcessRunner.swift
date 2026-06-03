@@ -144,15 +144,25 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
 
         var result = Data()
         var buffer = [UInt8](repeating: 0, count: 4096)
-        var postExitIdleBeganAt: ContinuousClock.Instant?
+        var postExitDrainBeganAt: ContinuousClock.Instant?
 
         while true {
+            if await coordinator.hasProcessFinished() {
+                let now = clock.now
+                if let drainBeganAt = postExitDrainBeganAt {
+                    if drainBeganAt.duration(to: now) >= Self.postExitPipeDrainGrace {
+                        break
+                    }
+                } else {
+                    postExitDrainBeganAt = now
+                }
+            }
+
             let byteCount = buffer.withUnsafeMutableBufferPointer { pointer in
                 read(fileDescriptor, pointer.baseAddress, pointer.count)
             }
 
             if byteCount > 0 {
-                postExitIdleBeganAt = nil
                 result.append(contentsOf: buffer.prefix(byteCount))
                 continue
             }
@@ -166,18 +176,6 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
             }
 
             if errno == EAGAIN || errno == EWOULDBLOCK {
-                if await coordinator.hasProcessFinished() {
-                    let now = clock.now
-                    if let idleBeganAt = postExitIdleBeganAt {
-                        if idleBeganAt.duration(to: now) >= Self.postExitPipeDrainGrace {
-                            break
-                        }
-                    } else {
-                        postExitIdleBeganAt = now
-                    }
-                } else {
-                    postExitIdleBeganAt = nil
-                }
                 do {
                     try await clock.sleep(for: Self.pipeReadRetryInterval)
                 } catch {

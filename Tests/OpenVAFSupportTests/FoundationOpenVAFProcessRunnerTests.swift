@@ -83,6 +83,28 @@ struct FoundationOpenVAFProcessRunnerTests {
         #expect(elapsed < .seconds(1))
     }
 
+    @Test("Run stops draining after exited child continuously writes to inherited pipe")
+    func runStopsDrainingAfterExitedChildContinuouslyWritesToInheritedPipe() async throws {
+        let runner = FoundationOpenVAFProcessRunner()
+        let clock = ContinuousClock()
+        let startedAt = clock.now
+        let command = OpenVAFProcessCommand(
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "(sleep 0.01; while :; do printf x; sleep 0.01; done) & printf done"],
+            environment: nil,
+            workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            timeout: .seconds(5),
+            terminationGrace: .milliseconds(10)
+        )
+
+        let result = try await runner.run(command)
+        let elapsed = startedAt.duration(to: clock.now)
+
+        #expect(result.exitCode == 0)
+        #expect(result.standardOutput.hasPrefix("done"))
+        #expect(elapsed < .seconds(1))
+    }
+
     @Test("Run does not time out after the direct process already exited")
     func runDoesNotTimeOutAfterTheDirectProcessAlreadyExited() async throws {
         let runner = FoundationOpenVAFProcessRunner()
