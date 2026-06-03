@@ -103,7 +103,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         let environment = effectiveEnvironment()
         let source = try validate(request)
         let executableURL = try executableResolver.resolve(configuration.executable, environment: environment)
-        let installation = await availableInstallation(matching: executableURL, environment: environment)
+        let installationMetadata = await availableInstallation(matching: executableURL, environment: environment)
         let prepared = try stage(source)
         let arguments = configuration.compilerArguments + [prepared.stagedSourceURL.lastPathComponent]
         let commandRecord = OpenVAFCommandRecord(
@@ -129,7 +129,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 throw OpenVAFError.compilationFailed(compilationFailure(
                     prepared: prepared,
                     command: commandRecord,
-                    installation: installation,
+                    installationMetadata: installationMetadata,
                     exitCode: result.exitCode,
                     standardOutput: result.standardOutput,
                     standardError: result.standardError,
@@ -142,7 +142,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 throw OpenVAFError.outputMissing(compilationFailure(
                     prepared: prepared,
                     command: commandRecord,
-                    installation: installation,
+                    installationMetadata: installationMetadata,
                     exitCode: result.exitCode,
                     standardOutput: result.standardOutput,
                     standardError: result.standardError,
@@ -157,7 +157,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 stagedSourceURL: prepared.stagedSourceURL,
                 outputURL: prepared.outputURL,
                 command: commandRecord,
-                openVAFVersion: installation?.version,
+                openVAFVersion: openVAFVersion(from: installationMetadata),
                 exitCode: result.exitCode,
                 standardOutput: result.standardOutput,
                 standardError: result.standardError,
@@ -170,7 +170,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 from: error,
                 prepared: prepared,
                 command: commandRecord,
-                installation: installation
+                installationMetadata: installationMetadata
             )
         } catch let error as OpenVAFError {
             cleanupFailedWorkingDirectory(prepared.stagingRootDirectory)
@@ -197,6 +197,11 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         let outputFileName: String
         let includeRootDirectory: URL
         let includeURLs: [URL]
+    }
+
+    private struct InstallationMetadata {
+        let installation: OpenVAFInstallation
+        let cacheSnapshot: OpenVAFInstallationCache.Snapshot?
     }
 
     private enum ConfigurationUse {
@@ -889,11 +894,11 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
     private func availableInstallation(
         matching executableURL: URL,
         environment: [String: String]
-    ) async -> OpenVAFInstallation? {
+    ) async -> InstallationMetadata? {
         let cacheSnapshot = installationCache.snapshot(for: executableURL)
         if let cacheSnapshot,
            let installation = installationCache.installation(for: cacheSnapshot) {
-            return installation
+            return InstallationMetadata(installation: installation, cacheSnapshot: cacheSnapshot)
         }
 
         let command = OpenVAFProcessCommand(
@@ -911,7 +916,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         switch availability {
         case .available(let installation)
             where installation.executableURL.standardizedFileURL == executableURL.standardizedFileURL:
-            return installation
+            return InstallationMetadata(installation: installation, cacheSnapshot: cacheSnapshot)
         case .available, .unavailable:
             return nil
         }
@@ -966,7 +971,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
     private func compilationFailure(
         prepared: PreparedSource,
         command: OpenVAFCommandRecord,
-        installation: OpenVAFInstallation?,
+        installationMetadata: InstallationMetadata?,
         exitCode: Int32?,
         standardOutput: String,
         standardError: String,
@@ -979,7 +984,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             stagedSourceURL: prepared.stagedSourceURL,
             outputURL: prepared.outputURL,
             command: command,
-            openVAFVersion: installation?.version,
+            openVAFVersion: openVAFVersion(from: installationMetadata),
             exitCode: exitCode,
             standardOutput: standardOutput,
             standardError: standardError,
@@ -992,7 +997,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         from error: OpenVAFProcessError,
         prepared: PreparedSource,
         command: OpenVAFCommandRecord,
-        installation: OpenVAFInstallation?
+        installationMetadata: InstallationMetadata?
     ) -> OpenVAFError {
         switch error {
         case .launchFailed(let executablePath, let message):
@@ -1002,7 +1007,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 compilationFailure(
                     prepared: prepared,
                     command: command,
-                    installation: installation,
+                    installationMetadata: installationMetadata,
                     exitCode: nil,
                     standardOutput: standardOutput,
                     standardError: standardError,
@@ -1015,7 +1020,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             return .compilationCancelled(compilationFailure(
                 prepared: prepared,
                 command: command,
-                installation: installation,
+                installationMetadata: installationMetadata,
                 exitCode: nil,
                 standardOutput: standardOutput,
                 standardError: standardError,
@@ -1023,6 +1028,15 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 finishedAt: finishedAt
             ))
         }
+    }
+
+    private func openVAFVersion(from metadata: InstallationMetadata?) -> String? {
+        guard let metadata else { return nil }
+        guard let cacheSnapshot = metadata.cacheSnapshot else { return nil }
+        guard installationCache.isStable(cacheSnapshot, for: metadata.installation.executableURL) else {
+            return nil
+        }
+        return metadata.installation.version
     }
 
     private func unavailableReason(from error: OpenVAFError) -> OpenVAFUnavailableReason {

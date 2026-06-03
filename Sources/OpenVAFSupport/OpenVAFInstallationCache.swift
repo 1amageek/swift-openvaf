@@ -23,9 +23,13 @@ package final class OpenVAFInstallationCache: Sendable {
         installations.withLock { $0[snapshot.key] }
     }
 
+    package func isStable(_ snapshot: Snapshot, for executableURL: URL) -> Bool {
+        executableURL.standardizedFileURL == snapshot.executableURL
+            && self.snapshot(for: executableURL) == snapshot
+    }
+
     package func store(_ installation: OpenVAFInstallation, forStable snapshot: Snapshot) {
-        guard installation.executableURL.standardizedFileURL == snapshot.executableURL,
-              self.snapshot(for: installation.executableURL) == snapshot else {
+        guard isStable(snapshot, for: installation.executableURL) else {
             return
         }
         installations.withLock { $0[snapshot.key] = installation }

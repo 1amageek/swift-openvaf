@@ -42,7 +42,7 @@ Add `OpenVAFSupport` as a SwiftPM dependency.
 ```swift
 .package(
     url: "https://github.com/1amageek/swift-openvaf.git",
-    from: "0.3.5"
+    from: "0.3.6"
 )
 ```
 
@@ -177,7 +177,7 @@ Successful compilations return `OpenVAFCompilationArtifact`.
 | `stagedSourceURL` | Source file copied into the run-scoped working directory |
 | `outputURL` | Expected OSDI output URL |
 | `command` | Sanitized command metadata |
-| `openVAFVersion` | Version parsed from `openvaf --version`, when available |
+| `openVAFVersion` | Version parsed from `openvaf --version`, when the executable snapshot remains stable through artifact creation |
 | `exitCode` | OpenVAF process exit code |
 | `standardOutput` | Captured stdout |
 | `standardError` | Captured stderr |
