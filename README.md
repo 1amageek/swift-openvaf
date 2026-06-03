@@ -42,7 +42,7 @@ Add `OpenVAFSupport` as a SwiftPM dependency.
 ```swift
 .package(
     url: "https://github.com/1amageek/swift-openvaf.git",
-    from: "0.6.4"
+    from: "0.6.5"
 )
 ```
 
@@ -185,6 +185,8 @@ Successful compilations return `OpenVAFCompilationArtifact`.
 | `standardOutput` | Captured stdout |
 | `standardError` | Captured stderr |
 | `startedAt` / `finishedAt` | Process timing |
+
+`sourceURL` preserves the caller's requested source URL for auditability. The compiler validates and normalizes local file paths internally before reading, staging, and launching OpenVAF.
 
 `OpenVAFCommandRecord` stores redacted environment metadata. Environment values are not persisted directly; `OpenVAFEnvironmentRecord.valueSHA256` records a fingerprint for reproducibility checks.
 

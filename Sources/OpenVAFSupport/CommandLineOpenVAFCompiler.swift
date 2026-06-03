@@ -152,7 +152,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             }
 
             return OpenVAFCompilationArtifact(
-                sourceURL: prepared.sourceURL,
+                sourceURL: prepared.requestedSourceURL,
                 sourceSHA256: prepared.sourceSHA256,
                 stagedSourceURL: prepared.stagedSourceURL,
                 outputURL: prepared.outputURL,
@@ -182,6 +182,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
     }
 
     private struct PreparedSource {
+        let requestedSourceURL: URL
         let sourceURL: URL
         let stagingRootDirectory: URL
         let commandWorkingDirectory: URL
@@ -191,6 +192,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
     }
 
     private struct ValidatedSource {
+        let requestedSourceURL: URL
         let sourceURL: URL
         let stagedSourceFileName: String
         let outputDirectory: URL
@@ -406,8 +408,9 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
 
     private func validate(_ request: OpenVAFCompilationRequest) throws(OpenVAFError) -> ValidatedSource {
         let fileManager = FileManager.default
+        let requestedSourceURL = request.sourceURL
         let sourceURL = try validatedRequestFileURL(
-            request.sourceURL,
+            requestedSourceURL,
             operation: "validate source",
             nonFileMessage: "Source URL must be a file URL",
             nulMessage: "Source path must not contain NUL"
@@ -503,6 +506,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         )
 
         return ValidatedSource(
+            requestedSourceURL: requestedSourceURL,
             sourceURL: sourceURL,
             stagedSourceFileName: stagedFileName,
             outputDirectory: outputDirectory,
@@ -572,6 +576,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         }
 
         return PreparedSource(
+            requestedSourceURL: source.requestedSourceURL,
             sourceURL: source.sourceURL,
             stagingRootDirectory: stagingRootDirectory,
             commandWorkingDirectory: commandWorkingDirectory,
@@ -1097,7 +1102,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         finishedAt: Date?
     ) -> OpenVAFCompilationFailure {
         OpenVAFCompilationFailure(
-            sourceURL: prepared.sourceURL,
+            sourceURL: prepared.requestedSourceURL,
             sourceSHA256: prepared.sourceSHA256,
             stagedSourceURL: prepared.stagedSourceURL,
             outputURL: prepared.outputURL,

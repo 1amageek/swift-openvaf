@@ -1092,7 +1092,7 @@ struct CommandLineOpenVAFCompilerTests {
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(artifact.sourceURL == linkedSourceURL.standardized)
+        #expect(artifact.sourceURL == sourceURL)
         #expect(artifact.stagedSourceURL.lastPathComponent == "linked.va")
         #expect(artifact.outputURL.lastPathComponent == "linked.osdi")
     }
@@ -1867,6 +1867,56 @@ module model; endmodule
             }
         }
         #expect(openVAFWorkingDirectories(in: sandbox.url.appendingPathComponent("out")).isEmpty)
+    }
+
+    @Test("Compile failures preserve requested source URL after normalization")
+    func compileFailuresPreserveRequestedSourceURLAfterNormalization() async throws {
+        let sandbox = try TemporaryDirectory(name: "failure-request-source-url")
+        defer { sandbox.remove() }
+
+        let sourceDirectory = sandbox.url.appendingPathComponent("src")
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+
+        let targetSourceURL = sandbox.url.appendingPathComponent("target.va")
+        let linkedSourceURL = sandbox.url.appendingPathComponent("linked.va")
+        let sourceURL = URL(string: sourceDirectory
+            .appendingPathComponent("placeholder")
+            .absoluteString
+            .replacingOccurrences(of: "placeholder", with: "%2e%2e/linked.va"))!
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module linked; endmodule\n".write(to: targetSourceURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: linkedSourceURL, withDestinationURL: targetSourceURL)
+
+        let runner = RecordingProcessRunner { _ in
+            OpenVAFProcessResult(
+                exitCode: 2,
+                standardOutput: "",
+                standardError: "syntax error",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: runner
+        )
+
+        do {
+            _ = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+            Issue.record("Expected compile failure")
+        } catch let error {
+            switch error {
+            case .compilationFailed(let failure):
+                #expect(failure.sourceURL == sourceURL)
+                #expect(failure.stagedSourceURL.lastPathComponent == "linked.va")
+                #expect(failure.outputURL.lastPathComponent == "linked.osdi")
+                #expect(failure.command.arguments == ["linked.va"])
+            default:
+                Issue.record("Expected compile failure, got \(error)")
+            }
+        }
+        #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
     }
 
     @Test("Compile keeps failed working directory when configured")

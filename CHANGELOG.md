@@ -4,6 +4,12 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.6.5 - 2026-06-04
+
+### Fixed
+
+- Preserve the caller-requested source URL in successful artifacts and compile failures after validation normalizes the file path used for source reads, staging, and OpenVAF invocation.
+
 ## 0.6.4 - 2026-06-04
 
 ### Fixed
