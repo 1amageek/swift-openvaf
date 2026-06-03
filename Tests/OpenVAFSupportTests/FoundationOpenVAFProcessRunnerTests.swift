@@ -218,9 +218,16 @@ struct FoundationOpenVAFProcessRunnerTests {
     @Test("Run ignores cancellation after the direct process already exited")
     func runIgnoresCancellationAfterTheDirectProcessAlreadyExited() async throws {
         let runner = FoundationOpenVAFProcessRunner()
+        let sandbox = try ProcessRunnerTemporaryDirectory(name: "cancel-after-exit")
+        defer { sandbox.remove() }
+
+        let markerURL = sandbox.url.appendingPathComponent("direct-process-exited")
+        let script = """
+        /usr/bin/perl -e 'while (getppid() == $ARGV[0]) { select undef, undef, undef, 0.005 } open my $fh, ">", $ARGV[1] or die $!; close $fh; sleep 1' $$ "$1" & printf done
+        """
         let command = OpenVAFProcessCommand(
             executableURL: URL(fileURLWithPath: "/bin/sh"),
-            arguments: ["-c", "(sleep 1) & printf done"],
+            arguments: ["-c", script, "openvaf-runner-test", markerURL.path],
             environment: nil,
             workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
             timeout: .seconds(5),
@@ -230,13 +237,49 @@ struct FoundationOpenVAFProcessRunnerTests {
         let task = Task {
             try await runner.run(command)
         }
+        defer { task.cancel() }
 
-        try await ContinuousClock().sleep(for: .milliseconds(50))
+        try await waitUntilFileExists(markerURL)
         task.cancel()
 
         let result = try await task.value
 
         #expect(result.exitCode == 0)
         #expect(result.standardOutput == "done")
+    }
+
+    private func waitUntilFileExists(_ url: URL) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while !FileManager.default.fileExists(atPath: url.path) && clock.now < deadline {
+            try await clock.sleep(for: .milliseconds(5))
+        }
+        if !FileManager.default.fileExists(atPath: url.path) {
+            throw ProcessRunnerTestError.markerNotCreated(url.path)
+        }
+    }
+}
+
+private enum ProcessRunnerTestError: Error {
+    case markerNotCreated(String)
+}
+
+private struct ProcessRunnerTemporaryDirectory {
+    let url: URL
+
+    init(name: String) throws {
+        url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OpenVAFSupportTests-\(name)-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    }
+
+    func remove() {
+        do {
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+        } catch {
+            Issue.record("Failed to remove temporary directory \(url.path): \(error)")
+        }
     }
 }
