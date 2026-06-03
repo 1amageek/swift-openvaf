@@ -4,6 +4,13 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.6.0 - 2026-06-04
+
+### Changed
+
+- Promote the reviewed attribution-license package state to the 0.6 release series after revalidating the public Swift API, executable resolution, process handling, include staging, fake compiler integration, and optional real OpenVAF E2E coverage.
+- Update SwiftPM installation guidance to start from 0.6.0.
+
 ## 0.5.0 - 2026-06-04
 
 ### Changed
