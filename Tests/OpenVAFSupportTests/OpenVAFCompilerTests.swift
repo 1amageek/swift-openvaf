@@ -220,6 +220,35 @@ struct CommandLineOpenVAFCompilerTests {
         )))
     }
 
+    @Test("Availability rejects empty executable paths without launching")
+    func availabilityRejectsEmptyExecutablePathsWithoutLaunching() async throws {
+        let runner = RecordingProcessRunner { _ in
+            Issue.record("Runner should not be called when executable path is invalid")
+            return OpenVAFProcessResult(
+                exitCode: 0,
+                standardOutput: "",
+                standardError: "",
+                startedAt: Date(),
+                finishedAt: Date()
+            )
+        }
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(
+                executable: .path(""),
+                processEnvironment: ["PATH": "/missing"]
+            ),
+            executableResolver: StaticExecutableResolver(url: URL(fileURLWithPath: "/tmp/openvaf")),
+            processRunner: runner
+        )
+
+        let availability = await compiler.availability()
+
+        #expect(availability == .unavailable(.invalidConfiguration(
+            field: "executable.path",
+            message: "Executable path must not be empty"
+        )))
+    }
+
     @Test("Availability maps unexpected resolver errors without trapping")
     func availabilityMapsUnexpectedResolverErrorsWithoutTrapping() async throws {
         let runner = RecordingProcessRunner { _ in
@@ -2070,6 +2099,27 @@ module model; endmodule
         await #expect(throws: OpenVAFError.invalidExecutableName(
             "sub/openvaf",
             message: "Name must not contain path components"
+        )) {
+            try await compiler.compile(sourceAt: missingSourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
+    @Test("Compile rejects empty executable paths before reading source")
+    func compileRejectsEmptyExecutablePathsBeforeReadingSource() async throws {
+        let sandbox = try TemporaryDirectory(name: "empty-executable-path-before-source")
+        defer { sandbox.remove() }
+
+        let missingSourceURL = sandbox.url.appendingPathComponent("missing.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
+            executable: .path(""),
+            processEnvironment: ["PATH": sandbox.url.path]
+        ))
+
+        await #expect(throws: OpenVAFError.invalidConfiguration(
+            field: "executable.path",
+            message: "Executable path must not be empty"
         )) {
             try await compiler.compile(sourceAt: missingSourceURL, to: outputDirectory)
         }

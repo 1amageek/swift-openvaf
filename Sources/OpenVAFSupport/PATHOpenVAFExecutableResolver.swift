@@ -28,6 +28,8 @@ package struct PATHOpenVAFExecutableResolver: OpenVAFExecutableResolving {
     }
 
     private func resolvePath(_ path: String) throws(OpenVAFError) -> URL {
+        try OpenVAFExecutablePathValidator.validate(path)
+
         let url = URL(fileURLWithPath: path)
         guard isExecutableRegularFile(at: url) else {
             throw .notExecutable(path: path)

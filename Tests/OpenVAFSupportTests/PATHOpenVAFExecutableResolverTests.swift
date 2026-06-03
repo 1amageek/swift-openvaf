@@ -145,6 +145,16 @@ struct PATHOpenVAFExecutableResolverTests {
         }
     }
 
+    @Test("Path lookup rejects empty executable path")
+    func pathLookupRejectsEmptyExecutablePath() throws {
+        #expect(throws: OpenVAFError.invalidConfiguration(
+            field: "executable.path",
+            message: "Executable path must not be empty"
+        )) {
+            try PATHOpenVAFExecutableResolver().resolve(.path(""), environment: [:])
+        }
+    }
+
     @Test("Path lookup rejects executable directory")
     func pathLookupRejectsExecutableDirectory() throws {
         let sandbox = try TemporaryDirectory(name: "resolver-directory-path")

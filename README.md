@@ -42,7 +42,7 @@ Add `OpenVAFSupport` as a SwiftPM dependency.
 ```swift
 .package(
     url: "https://github.com/1amageek/swift-openvaf.git",
-    from: "0.6.1"
+    from: "0.6.2"
 )
 ```
 
@@ -87,7 +87,7 @@ let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
 ))
 ```
 
-Use `.name("openvaf")` only for plain executable file names that should be searched on `PATH`. Use `.path(...)` for absolute or relative paths. Empty `PATH` components are treated as current-directory searches, matching POSIX command lookup behavior.
+Use `.name("openvaf")` only for plain executable file names that should be searched on `PATH`. Use `.path(...)` for non-empty absolute or relative paths. Empty `PATH` components are treated as current-directory searches, matching POSIX command lookup behavior.
 
 ## Basic Usage
 
@@ -224,7 +224,7 @@ let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
 | `compilerArguments` | `[]` | Extra arguments passed before the staged source name |
 | `keepsFailedWorkingDirectories` | `false` | Preserves failed staging directories when enabled |
 
-`compileTimeout` and `availabilityTimeout` must be greater than zero. `terminationGrace` must not be negative. Explicit environment keys and compiler arguments must be representable at the POSIX process boundary. Invalid configuration is reported as a typed error before staging or launching a process.
+`compileTimeout` and `availabilityTimeout` must be greater than zero. `terminationGrace` must not be negative. Executable paths must not be empty. Explicit environment keys and compiler arguments must be representable at the POSIX process boundary. Invalid configuration is reported as a typed error before staging or launching a process.
 
 `OpenVAFCompilationRequest.includeRootDirectory` controls which existing local include files may be staged. When omitted, it defaults to the source file's directory.
 
