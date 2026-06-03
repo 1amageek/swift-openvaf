@@ -4,6 +4,13 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.4.0 - 2026-06-04
+
+### Changed
+
+- Promote the verified API, artifact model, executable discovery, and E2E coverage to the 0.4 release series.
+- Update SwiftPM installation guidance to start from 0.4.0.
+
 ## 0.3.8 - 2026-06-04
 
 ### Fixed
