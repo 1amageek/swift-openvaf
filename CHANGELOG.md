@@ -4,6 +4,13 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.7.4 - 2026-06-04
+
+### Fixed
+
+- Stabilize process cancellation tests by waiting for explicit process readiness before sending cancellation.
+- Update SwiftPM installation guidance to start from 0.7.4.
+
 ## 0.7.3 - 2026-06-04
 
 ### Fixed

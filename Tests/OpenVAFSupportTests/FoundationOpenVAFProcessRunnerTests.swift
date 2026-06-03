@@ -202,9 +202,19 @@ struct FoundationOpenVAFProcessRunnerTests {
     @Test("Run reports cancellation")
     func runReportsCancellation() async throws {
         let runner = FoundationOpenVAFProcessRunner()
+        let sandbox = try ProcessRunnerTemporaryDirectory(name: "cancel-running-process")
+        defer { sandbox.remove() }
+
+        let readyURL = sandbox.url.appendingPathComponent("process-ready")
+        let script = #"""
+        open my $ready_fh, ">", $ARGV[0] or die $!;
+        print $ready_fh "ready";
+        close $ready_fh;
+        while (1) { select(undef, undef, undef, 0.01); }
+        """#
         let command = OpenVAFProcessCommand(
-            executableURL: URL(fileURLWithPath: "/bin/sh"),
-            arguments: ["-c", "sleep 5"],
+            executableURL: URL(fileURLWithPath: "/usr/bin/perl"),
+            arguments: ["-e", script, readyURL.path],
             environment: nil,
             workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
             timeout: .seconds(30),
@@ -215,7 +225,7 @@ struct FoundationOpenVAFProcessRunnerTests {
             try await runner.run(command)
         }
 
-        try await ContinuousClock().sleep(for: .milliseconds(50))
+        try await waitUntilFileExists(readyURL)
         task.cancel()
 
         do {
@@ -224,7 +234,7 @@ struct FoundationOpenVAFProcessRunnerTests {
         } catch let error as OpenVAFProcessError {
             switch error {
             case .cancelled(let executablePath, _, _, let startedAt, let finishedAt):
-                #expect(executablePath == "/bin/sh")
+                #expect(executablePath == "/usr/bin/perl")
                 #expect(finishedAt >= startedAt)
             case .launchFailed, .timedOut:
                 Issue.record("Expected cancellation, got \(error)")
