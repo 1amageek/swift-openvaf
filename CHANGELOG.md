@@ -4,6 +4,13 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.5.0 - 2026-06-04
+
+### Changed
+
+- Replace the BSD-3-Clause license with the OpenVAFSupport Attribution License 1.0 so third-party products, services, tools, libraries, distributions, and hosted workflows that use the package must provide a user- or recipient-accessible attribution notice while preserving permission to use, modify, redistribute, sublicense, and sell copies.
+- Update SwiftPM installation guidance to start from 0.5.0.
+
 ## 0.4.6 - 2026-06-04
 
 ### Fixed

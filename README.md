@@ -31,7 +31,7 @@ flowchart LR
 | Swift language mode | Swift 6 |
 | Platform | macOS 15 or later |
 | External tool | OpenVAF command line executable |
-| License | BSD-3-Clause |
+| License | OpenVAFSupport Attribution License 1.0 |
 
 OpenVAF's official installation documentation currently lists pre-compiled executables for Windows and Linux and states that OSX is not supported. On macOS, `OpenVAFSupport` can still wrap a caller-supplied compatible or custom-built OpenVAF executable, but real end-to-end compilation is only available when such an executable is present.
 
@@ -42,7 +42,7 @@ Add `OpenVAFSupport` as a SwiftPM dependency.
 ```swift
 .package(
     url: "https://github.com/1amageek/swift-openvaf.git",
-    from: "0.4.6"
+    from: "0.5.0"
 )
 ```
 
@@ -279,24 +279,25 @@ OPENVAF_BIN=/path/to/openvaf OPENVAF_E2E=1 swift test --filter OpenVAFE2ETests
 | Reason | Impact |
 |---|---|
 | Platform availability | OpenVAF's published standalone executables target Linux and Windows; macOS is not currently supported by the upstream installation guide |
-| Licensing | OpenVAF is GPL licensed, while this Swift wrapper is BSD-3-Clause |
+| Licensing | OpenVAF is GPL licensed, while this Swift wrapper uses an attribution-required license |
 | Reproducibility | Callers should choose and record the exact OpenVAF executable used in their toolchain |
 
 Provide OpenVAF through `OPENVAF_BIN`, `PATH`, or `OpenVAFConfiguration(executable:)`.
 
 ## License
 
-`OpenVAFSupport` is distributed under the BSD-3-Clause License.
+`OpenVAFSupport` is distributed under the OpenVAFSupport Attribution License 1.0.
 
 | Permission | Condition |
 |---|---|
 | Use | Permitted |
 | Modification | Permitted |
 | Redistribution | Permitted in source and binary forms |
-| Attribution notice | Required when redistributing source or binary forms |
+| Sublicensing / sale | Permitted |
+| Attribution notice | Required for third-party products, services, tools, libraries, source distributions, binary distributions, and hosted workflows that use the package |
 | Endorsement | The copyright holder name cannot be used to promote derived products without written permission |
 
-This is intentionally not MIT licensed. Redistributors must keep the copyright notice, license conditions, and disclaimer in source redistributions, and must reproduce them in documentation and/or other materials for binary redistributions.
+This is intentionally not MIT licensed. When `OpenVAFSupport` is used in something made available to third parties, the attribution notice must be visible to users or recipients through an about screen, credits screen, licenses screen, documentation, package metadata, command line `--version` or `--license` output, generated license bundle, or another reasonably accessible location. Private internal use does not require publishing an attribution notice.
 
 ## Design Notes
 

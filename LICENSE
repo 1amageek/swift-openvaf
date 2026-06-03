@@ -1,28 +1,59 @@
-BSD 3-Clause License
+OpenVAFSupport Attribution License 1.0
 
 Copyright (c) 2026, 1amageek
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to use, copy,
+modify, merge, publish, distribute, sublicense, and/or sell copies of the
+Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
 
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
+1. Attribution notice.
 
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
+   Any product, service, command line tool, application, library distribution,
+   source distribution, binary distribution, or hosted workflow that is made
+   available to third parties and incorporates, links to, wraps, embeds, or
+   otherwise uses the Software must provide a reasonably visible attribution
+   notice to its users or recipients.
 
-3. Neither the name of the copyright holder nor the names of its contributors
-   may be used to endorse or promote products derived from this software
-   without specific prior written permission.
+   The attribution notice must include:
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+   - the name "OpenVAFSupport";
+   - the copyright notice above;
+   - the name of this license; and
+   - a link or reference to the project repository when reasonably practical.
+
+   The attribution notice may be provided in an about screen, credits screen,
+   licenses screen, documentation, package metadata, command line `--version` or
+   `--license` output, generated license bundle, or another place that is
+   reasonably accessible to users or recipients.
+
+2. Source redistributions.
+
+   Redistributions of source code must retain this license text, the copyright
+   notice above, and the disclaimer below.
+
+3. Binary redistributions.
+
+   Redistributions in binary form must reproduce this license text, the
+   copyright notice above, and the disclaimer below in the documentation and/or
+   other materials provided with the distribution, in addition to satisfying the
+   attribution notice requirement above.
+
+4. No endorsement.
+
+   Neither the name of the copyright holder nor the names of contributors may be
+   used to endorse or promote products derived from this Software without
+   specific prior written permission.
+
+5. Private internal use.
+
+   Private internal use that is not made available to third parties is permitted
+   without publishing an attribution notice.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
