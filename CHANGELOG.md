@@ -4,6 +4,37 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Add the first package Verilog-A compiler frontend slice with source buffers, source-range tokens, a Verilog-A lexer, a module parser, and lightweight module IR for future semantic analysis and OSDI generation.
+- Add an OpenVAF oracle comparison test that parses the same fixture with the Verilog-A compiler frontend and compiles it with `OPENVAF_BIN` or `openvaf` on `PATH` when a compatible executable is available.
+- Add SwiftPM traits for selecting the external OpenVAF CLI wrapper, the Verilog-A compiler frontend, both implementations by default, or shared support without either compiler implementation.
+- Add a separate `VerilogACompiler` product and target for protocol-first Verilog-A compiler capabilities, keeping `OpenVAFSupport` focused on the external OpenVAF wrapper.
+- Organize source and test directories by responsibility for `VerilogACompiler`, `OpenVAFSupport`, and integration coverage.
+- Add CI coverage for OpenVAFCLI-only, VerilogACompiler-only, and no-trait package test runs.
+- Add a macOS oracle installer script that downloads the official Linux x86-64 OpenVAF 23.5.0 binary, builds a Docker-based linker environment, and exposes it through a local `openvaf` shim for E2E and package comparison tests.
+- Add OpenVAF-inspired Verilog-A compiler frontend coverage for escaped identifiers, numeric forms, block-comment diagnostics, ANSI inline port declaration IR, Verilog-A attributes, qualifier-style declarators, nested analog blocks, multi-module parsing, and parser diagnostics.
+- Expand OpenVAF oracle comparison from one resistor fixture to independently authored resistor, current source, voltage source, VCCS, and inline-port fixtures.
+- Add a protocol-first Verilog-A compiler frontend API with `VerilogAParsing`, `VerilogAOSDICompiling`, `VerilogACompilerImplementation`, `VerilogACompilerFrontend`, `VerilogAParseResult`, and a frontend-local `VerilogASourceError`.
+- Add OpenVAF upstream frontend parity tests gated by `OPENVAF_UPSTREAM_ROOT`, with value checks for module names, ports, declarations, parameters, analog functions, and analog block counts.
+- Add Verilog-A compiler frontend parsing for OpenVAF upstream fixture coverage including branch, ground, thermal, variable declarations, analog functions, analog initial blocks, and analog case ranges.
+- Expand OpenVAF upstream frontend parity coverage to UI, body, and diagnostic-control fixtures for function bodies, nested blocks, warning attributes, port-without-direction cases, and formatter-heavy analog statements.
+- Add a source-range-preserving Verilog-A preprocessor token filter for `define`, `undef`, `ifdef`, `ifndef`, `elsif`, `else`, and `endif`, preventing inactive declarations and module boundaries from entering parser IR.
+- Ignore a UTF-8 byte order mark before the first token so first-line preprocessor directives are recognized correctly.
+- Preserve non-directive line-start macro invocations through preprocessing and treat them as opaque parser lines so macro arguments containing keywords do not corrupt module or analog block boundaries.
+- Consume continued preprocessor directive bodies and treat multiline line-start macro invocations as opaque parser input so unexpanded macro bodies cannot leak `module`, `endmodule`, `begin`, or `end` tokens into frontend IR.
+- Treat comments before line-start directives and macro invocations as whitespace, keeping inactive conditional code and comment-prefixed macro arguments out of frontend IR.
+- Preserve Verilog-A syntax that follows object-like line-start macro prefixes, so forms such as macro-prefixed `begin` labels do not shorten analog block source ranges.
+- Bound recovery for unterminated function-like line-start macro invocations to the macro line, so malformed opaque macro calls do not consume the rest of the file.
+- Add parameter parsing for multi-declarator and dimensioned parameter statements and Verilog-A `from` / `exclude` constraint clauses, with upstream value checks to keep default-value ranges free of constraint text.
+- Add parser handling for declaration and parameter attributes, including attributes whose names match Verilog-A keywords and diagnostics for unterminated attributes.
+- Add module-boundary parser recovery for unterminated analog blocks, analog case statements, and analog functions so later modules are still parsed.
+- Add compound analog statement range parsing so `analog` statements with conditional `begin` / `end` branches are not truncated at the first nested semicolon.
+- Add declarator parser recovery for missing declaration terminators and unterminated declarator ranges so module headers, parameters, and declarations do not consume later modules.
+- Add compiler frontend source URL validation so `parse(contentsOf:)` rejects non-file URLs, non-local file hosts, empty paths, and NUL-containing paths before reading source bytes.
+- Add brace-delimited parameter default handling so commas and nested delimiters inside `{ ... }` do not split parameter declarators or truncate default-value ranges.
+- Filter include staging through Verilog-A conditional directives so inactive `include` lines do not trigger missing-file or unsafe-path validation before OpenVAF runs.
+
 ## 0.7.9 - 2026-06-04
 
 ### Fixed

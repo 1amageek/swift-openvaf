@@ -17,11 +17,116 @@ flowchart LR
 
 | Goal | Behavior |
 |---|---|
-| Swift-first API | Exposes `OpenVAFCompiler`, `CommandLineOpenVAFCompiler`, `OpenVAFCompilationRequest`, and typed errors |
+| Swift-first API | Exposes trait-gated compiler APIs, request types, artifacts, and typed errors |
 | Reproducibility | Records command arguments, working directory, source hash, OpenVAF version, environment metadata, stdout, stderr, and timing |
 | Local-first operation | Uses a configured executable, `OPENVAF_BIN`, or `openvaf` on `PATH` |
 | Failure inspection | Compile-specific failures carry `OpenVAFCompilationFailure` metadata |
 | Testability | Resolver and process runner dependencies are injected behind protocols |
+
+## Modules and Implementation Tracks
+
+The package separates the Verilog-A compiler interfaces from the OpenVAF command-line wrapper.
+
+```mermaid
+flowchart TD
+  API["Swift package API"] --> VAC["VerilogACompiler module"]
+  API --> OVS["OpenVAFSupport module"]
+
+  VAC --> Parsing["VerilogAParsing"]
+  Parsing --> Frontend["VerilogACompilerFrontend"]
+  Frontend --> Buffer["VerilogASourceBuffer"]
+  Buffer --> Lexer["VerilogALexer"]
+  Lexer --> Preprocessor["VerilogAPreprocessor"]
+  Preprocessor --> Parser["VerilogAParser"]
+  Parser --> IR["VerilogAModule IR"]
+
+  VAC --> OSDIProtocol["VerilogAOSDICompiling"]
+  OVS --> External["CommandLineOpenVAFCompiler"]
+  External --> OSDIProtocol
+  External --> Resolver["OPENVAF_BIN / PATH"]
+  Resolver --> CLI["External OpenVAF executable"]
+  CLI --> OSDI["OSDI output"]
+
+  CLI --> Oracle["Oracle comparison tests"]
+  IR --> Oracle
+```
+
+| Module | Owns | Purpose |
+|---|---|---|
+| `VerilogACompiler` | `VerilogAParsing`, `VerilogAOSDICompiling`, source buffers, lexer, preprocessor, parser, source-range IR, include scanner | Protocol-first Verilog-A compiler surface and in-process frontend |
+| `OpenVAFSupport` | `CommandLineOpenVAFCompiler`, process execution, executable resolution, OpenVAF artifacts and failures | External OpenVAF wrapper that conforms to `VerilogAOSDICompiling` |
+| Oracle comparison | Conditional tests | Uses external OpenVAF as a black-box oracle when a compatible executable is available |
+
+The package implementation is developed independently from OpenVAF's GPL source. OpenVAF is used as an external executable and black-box oracle, not as linked or copied implementation code.
+
+## Source Layout
+
+Source directories mirror compiler responsibilities so module boundaries stay easy to audit.
+
+```mermaid
+flowchart TD
+  VAC["Sources/VerilogACompiler"] --> VACAPI["API"]
+  VAC --> VACFrontend["Frontend"]
+  VAC --> VACSource["Source"]
+  VAC --> VACLx["Lexing"]
+  VAC --> VACPP["Preprocessing"]
+  VAC --> VACParse["Parsing"]
+  VAC --> VACIR["IR"]
+
+  OVS["Sources/OpenVAFSupport"] --> OVSAPI["API"]
+  OVS --> OVSCLI["CommandLine"]
+  OVS --> OVSExec["Executable"]
+  OVS --> OVSProc["Process"]
+  OVS --> OVSRecords["Records"]
+
+  Tests["Tests/OpenVAFSupportTests"] --> TestsOVS["OpenVAFSupport"]
+  Tests --> TestsVAC["VerilogACompiler"]
+  Tests --> TestsIntegration["Integration"]
+```
+
+| Directory | Responsibility |
+|---|---|
+| `Sources/VerilogACompiler/API` | Public compiler protocols and implementation selection |
+| `Sources/VerilogACompiler/Frontend` | In-process compiler frontend entry point |
+| `Sources/VerilogACompiler/Source` | Source buffers, ranges, diagnostics, and source loading errors |
+| `Sources/VerilogACompiler/Lexing` | Lexer, tokens, symbols, and keywords |
+| `Sources/VerilogACompiler/Preprocessing` | Preprocessor filtering and include scanning |
+| `Sources/VerilogACompiler/Parsing` | Parser and declarator-name extraction |
+| `Sources/VerilogACompiler/IR` | Source-range-preserving Verilog-A IR |
+| `Sources/OpenVAFSupport/API` | Public OpenVAF requests, artifacts, availability, configuration, and errors |
+| `Sources/OpenVAFSupport/CommandLine` | External OpenVAF command-line compiler implementation and protocol conformance |
+| `Sources/OpenVAFSupport/Executable` | Executable validation, resolution, and version cache |
+| `Sources/OpenVAFSupport/Process` | Process command execution, output capture, cancellation, and timeout handling |
+| `Sources/OpenVAFSupport/Records` | Reproducibility metadata captured in compilation artifacts |
+| `Tests/OpenVAFSupportTests/OpenVAFSupport` | OpenVAF wrapper unit tests |
+| `Tests/OpenVAFSupportTests/VerilogACompiler` | In-process compiler frontend and include scanner tests |
+| `Tests/OpenVAFSupportTests/Integration` | E2E, OpenVAF oracle, and upstream parity tests |
+
+## Build Traits
+
+SwiftPM traits choose which implementation track is compiled.
+
+```mermaid
+flowchart TD
+  Default["Default build"] --> Both["OpenVAFCLI + VerilogACompiler"]
+  CLI["--disable-default-traits --traits OpenVAFCLI"] --> External["External OpenVAF wrapper"]
+  Compiler["--disable-default-traits --traits VerilogACompiler"] --> Frontend["Verilog-A compiler frontend"]
+  None["--disable-default-traits"] --> Shared["Shared request, artifact, error, and include-scanner support"]
+```
+
+| Trait selection | Public implementation surface |
+|---|---|
+| Default | `VerilogACompilerFrontend`, `VerilogAParsing`, `VerilogAOSDICompiling`, and `CommandLineOpenVAFCompiler` |
+| `OpenVAFCLI` | External OpenVAF process wrapper and `VerilogAOSDICompiling` conformance |
+| `VerilogACompiler` | In-process Verilog-A parser frontend and source-range IR |
+| No traits | Backend protocols and include scanning support |
+
+```bash
+swift build
+swift build --disable-default-traits --traits OpenVAFCLI
+swift build --disable-default-traits --traits VerilogACompiler
+swift build --disable-default-traits
+```
 
 ## Requirements
 
@@ -30,7 +135,7 @@ flowchart LR
 | Swift tools version | Swift 6.3 |
 | Swift language mode | Swift 6 |
 | Platform | macOS 15 or later |
-| External tool | OpenVAF command line executable |
+| External tool | Required only when the `OpenVAFCLI` trait is used for real compilation |
 | License | OpenVAFSupport Attribution License 1.0 |
 
 OpenVAF's official installation documentation currently lists pre-compiled executables for Windows and Linux and states that OSX is not supported. On macOS, `OpenVAFSupport` can still wrap a caller-supplied compatible or custom-built OpenVAF executable, but real end-to-end compilation is only available when such an executable is present.
@@ -90,6 +195,8 @@ let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
 Use `.name("openvaf")` only for plain executable file names that should be searched on `PATH`. Use `.path(...)` for non-empty absolute or relative paths. Empty `PATH` components are treated as current-directory searches, matching POSIX command lookup behavior.
 
 ## Basic Usage
+
+This API is available when the `OpenVAFCLI` trait is enabled.
 
 ```swift
 import Foundation
@@ -230,6 +337,47 @@ let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
 
 `OpenVAFCompilationRequest.includeRootDirectory` controls which existing local include files may be staged. When omitted, it defaults to the source file's directory.
 
+## Verilog-A Compiler Frontend
+
+This API is available from the `VerilogACompiler` module when the `VerilogACompiler` trait is enabled. `VerilogAParsing` defines the parser boundary, and `VerilogACompilerFrontend` provides the package in-process implementation.
+
+```swift
+import VerilogACompiler
+
+let source = VerilogASourceBuffer(string: verilogASource)
+let parser: any VerilogAParsing = VerilogACompilerFrontend()
+let result = parser.parse(source)
+
+for module in result.modules {
+    print(module.name(in: result.source))
+}
+```
+
+The external OpenVAF wrapper is exposed as an OSDI compiler capability through `VerilogAOSDICompiling`.
+
+```swift
+import OpenVAFSupport
+import VerilogACompiler
+
+let compiler: any VerilogAOSDICompiling<OpenVAFCompilationArtifact> = CommandLineOpenVAFCompiler()
+let artifact = try await compiler.compileOSDI(sourceAt: sourceURL, to: outputDirectory)
+```
+
+The frontend stores source text once in `VerilogASourceBuffer`. Tokens and parsed IR carry `VerilogASourceRange` byte ranges into that buffer, so downstream semantic analysis and code generation can defer string materialization.
+
+`parse(contentsOf:)` accepts local `file://` URLs only. Non-file schemes, non-local file URL hosts, empty paths, and paths containing NUL are rejected before source bytes are read.
+
+Current compiler frontend coverage:
+
+| Component | Current capability |
+|---|---|
+| `VerilogALexer` | Identifiers, escaped identifiers, keywords, numbers, strings, comments, symbols, UTF-8 byte order mark handling, diagnostics |
+| `VerilogAPreprocessor` | Known line-start directive filtering with comments treated as whitespace, `include` line filtering, continued directive body filtering, object-like `define` / `undef` tracking, `ifdef` / `ifndef` / `elsif` / `else` / `endif` conditional token selection, and preservation of non-directive macro invocations with original source ranges |
+| `VerilogAParser` | Module headers, ANSI inline port declarations, declaration and parameter attributes, ports, declarations, multi-declarator and dimensioned parameters, brace-delimited parameter defaults, parameter constraint clauses, analog functions, nested analog block ranges, compound analog statement ranges, analog initial blocks, analog case ranges, opaque function-like line-start macro invocation recovery with bounded recovery for unterminated calls, object-like macro prefix recovery that preserves following syntax, declarator recovery, and module-boundary recovery diagnostics |
+| `VerilogADeclaratorNameExtractor` | Declarator name extraction across inline qualifiers, ranges, brace-delimited defaults, and branch-style parenthesized endpoints |
+| `VerilogAModule` | Source-range IR for module name, ports, inline and body declarations, parameters, analog functions, and analog blocks |
+| Oracle tests | Conditional comparison across independently authored fixtures and OpenVAF upstream frontend fixtures accepted by external OpenVAF |
+
 ## Error Model
 
 | Error | When it occurs |
@@ -239,6 +387,7 @@ let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
 | `invalidExecutableName` | An executable name contains path components or is not a plain file name |
 | `notExecutable` | The resolved file is not executable |
 | `invalidOutputFileName` | `outputFileName` is empty, contains NUL, contains path components, is not `.osdi`, or would collide with a staged include |
+| `invalidSourceURL` | The Verilog-A compiler frontend source URL is not a local file URL or has an invalid file path |
 | `fileSystemFailure` | Source validation, staging, hashing, or directory creation fails |
 | `launchFailed` | The process cannot be launched |
 | `timedOut` / `cancelled` | Availability checks time out or are cancelled |
@@ -255,24 +404,69 @@ Run the package tests.
 scripts/swift-test-timeout.sh 30 swift test
 ```
 
+Trait-specific test runs are useful when validating package consumers that only want one implementation track.
+
+```bash
+scripts/swift-test-timeout.sh 60 swift test --disable-default-traits --traits OpenVAFCLI
+scripts/swift-test-timeout.sh 60 swift test --disable-default-traits --traits VerilogACompiler
+scripts/swift-test-timeout.sh 60 swift test --disable-default-traits
+```
+
 The test suite covers:
 
 | Area | Coverage |
 |---|---|
 | Resolver | Environment precedence, `PATH` lookup, executable regular file validation, non-executable rejection |
-| Compiler | Availability, regular source staging, local include staging, streamed source hashing, custom output names, version caching, cleanup policy |
+| Compiler | Availability, regular source staging, local include staging with inactive conditional include filtering, streamed source hashing, custom output names, version caching, cleanup policy |
 | Integration | Fake `openvaf` executable through real `PATH` resolution, process execution, staging, and artifact validation |
 | Failure artifacts | Non-zero exit, timeout, cancellation, missing or invalid output |
 | Process runner | stdout/stderr capture, stdin EOF isolation, large output drain, inherited pipe handles, invalid UTF-8, launch failure, timeout, cancellation |
+| Verilog-A compiler frontend | Lexer diagnostics, UTF-8 byte order mark handling, source ranges, escaped identifiers, numeric forms, preprocessor conditionals with comment-prefixed directives, continued preprocessor directive bodies, function-like line-start macro invocation recovery including comment-prefixed, multiline, and unterminated invocations, object-like macro prefixes followed by real syntax, ANSI inline port declaration IR, declaration and parameter attributes, unterminated attribute diagnostics, declarator and module-boundary recovery diagnostics, qualifier-style declarators, variables, branches, multi-declarator and dimensioned parameters, brace-delimited parameter defaults, parameter constraint clauses, analog functions, nested analog blocks, compound analog statements, analog initial blocks, analog case ranges, multi-module parsing |
+| Oracle comparison | Compiler frontend parse results compared against multiple independently authored sources that OpenVAF compiles successfully |
+| Upstream parity | Verilog-A compiler frontend values compared with OpenVAF `openvaf/test_data` frontend fixtures when `OPENVAF_UPSTREAM_ROOT` points at an OpenVAF checkout |
 | End-to-end | Real OpenVAF Verilog-A to OSDI compile when a compatible OpenVAF executable is available |
+| Trait selection | `OpenVAFCLI`, `VerilogACompiler`, default, and no-trait build/test coverage |
 
 Swift Testing suites use explicit `timeLimit` traits to guard against hangs.
+
+The compiler frontend fixtures are independently authored. Upstream OpenVAF tests are used as a coverage map, not vendored as test sources.
+
+OpenVAF upstream parity tests are gated by `OPENVAF_UPSTREAM_ROOT`. They read a local OpenVAF checkout and compare extracted values for module names, ports, declarations, parameters, selected parameter default values, analog functions, and analog block counts. When `OPENVAF_BIN` or `openvaf` is also available, the compileable upstream subset is compiled by OpenVAF in the same test.
+
+```bash
+OPENVAF_UPSTREAM_ROOT=/path/to/OpenVAF \
+  scripts/swift-test-timeout.sh 120 swift test --filter OpenVAFUpstreamFrontendParityTests
+```
 
 End-to-end tests are gated because OpenVAF is an external tool. They run automatically when `OPENVAF_BIN` or `openvaf` on `PATH` resolves to an executable. Set `OPENVAF_E2E=1` to make the E2E test mandatory; the test will fail if OpenVAF cannot be found.
 
 ```bash
 OPENVAF_BIN=/path/to/openvaf OPENVAF_E2E=1 swift test --filter OpenVAFE2ETests
 ```
+
+### macOS OpenVAF Oracle
+
+OpenVAF does not currently ship a macOS executable. For local oracle testing on macOS, this repository provides a setup script that installs the official Linux x86-64 OpenVAF 23.5.0 binary under `~/.local/share/openvaf`, builds a local Docker image with the required Linux linker toolchain, and writes a `~/.local/bin/openvaf` shim.
+
+```mermaid
+flowchart LR
+  Test["Swift tests"] --> Shim["~/.local/bin/openvaf"]
+  Shim --> Docker["Docker linux/amd64 container"]
+  Docker --> OpenVAF["OpenVAF 23.5.0"]
+  OpenVAF --> OSDI["Linux x86-64 .osdi artifact"]
+  Test --> Compiler["VerilogACompilerFrontend"]
+  OpenVAF --> Compare["Oracle comparison"]
+  Compiler --> Compare
+```
+
+```bash
+scripts/install-openvaf-oracle.sh
+openvaf --version
+OPENVAF_E2E=1 scripts/swift-test-timeout.sh 60 swift test --filter OpenVAFE2ETests
+scripts/swift-test-timeout.sh 60 swift test --filter VerilogACompilerFrontendOracleComparisonTests
+```
+
+The Docker shim is intended for parser/compiler oracle validation. The generated `.osdi` files are Linux x86-64 shared libraries and are not loadable on macOS.
 
 ## OpenVAF Binary Distribution
 

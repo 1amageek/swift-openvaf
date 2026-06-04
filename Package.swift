@@ -11,14 +11,38 @@ let package = Package(
             name: "OpenVAFSupport",
             targets: ["OpenVAFSupport"]
         ),
+        .library(
+            name: "VerilogACompiler",
+            targets: ["VerilogACompiler"]
+        ),
+    ],
+    traits: [
+        .trait(
+            name: "OpenVAFCLI",
+            description: "Enable the external OpenVAF command line compiler wrapper.",
+            enabledTraits: []
+        ),
+        .trait(
+            name: "VerilogACompiler",
+            description: "Enable the Verilog-A compiler frontend.",
+            enabledTraits: []
+        ),
+        .default(enabledTraits: ["OpenVAFCLI", "VerilogACompiler"]),
     ],
     targets: [
         .target(
-            name: "OpenVAFSupport"
+            name: "VerilogACompiler"
+        ),
+        .target(
+            name: "OpenVAFSupport",
+            dependencies: ["VerilogACompiler"]
         ),
         .testTarget(
             name: "OpenVAFSupportTests",
-            dependencies: ["OpenVAFSupport"]
+            dependencies: [
+                "OpenVAFSupport",
+                "VerilogACompiler",
+            ]
         ),
     ],
     swiftLanguageModes: [.v6]

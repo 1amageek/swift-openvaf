@@ -58,5 +58,11 @@ jobs:
       - name: Test
         run: scripts/swift-test-timeout.sh 30 swift test --skip-build
 
+      - name: Trait tests
+        run: |
+          scripts/swift-test-timeout.sh 60 swift test --disable-default-traits --traits OpenVAFCLI --scratch-path .build-openvafcli
+          scripts/swift-test-timeout.sh 60 swift test --disable-default-traits --traits VerilogACompiler --scratch-path .build-verilogacompiler
+          scripts/swift-test-timeout.sh 60 swift test --disable-default-traits --scratch-path .build-notraits
+
       - name: Thread Sanitizer
         run: scripts/swift-test-timeout.sh 90 swift test --sanitize=thread
