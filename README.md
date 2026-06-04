@@ -1,27 +1,39 @@
-# OpenVAFSupport
+# swift-openvaf
 
-`OpenVAFSupport` is a Swift 6.3 package for invoking the OpenVAF command line compiler from Swift code. It compiles Verilog-A sources into OSDI libraries and returns reproducible invocation artifacts that can be inspected by applications, command line tools, and agent workflows.
+[![CI](https://github.com/1amageek/swift-openvaf/actions/workflows/ci.yml/badge.svg)](https://github.com/1amageek/swift-openvaf/actions/workflows/ci.yml)
+
+`swift-openvaf` is a Swift 6.3 package for working with Verilog-A compiler workflows from Swift. It provides a protocol-first `VerilogACompiler` module for in-process parsing and compiler capabilities, plus an `OpenVAFSupport` module that invokes an external OpenVAF command line compiler to produce OSDI libraries with reproducible invocation artifacts.
 
 ```mermaid
-flowchart LR
-  Source["Verilog-A source (.va)"] --> Support["OpenVAFSupport"]
-  Support --> Stage["Run-scoped staging directory"]
-  Stage --> CLI["openvaf CLI"]
-  CLI --> Output["OSDI library (.osdi)"]
-  CLI --> Record["Invocation artifact"]
-  Output --> Simulator["ngspice pre_osdi"]
-  Record --> Audit["Audit / retry / human review"]
+flowchart TD
+  Source["Verilog-A source (.va)"] --> Package["swift-openvaf"]
+
+  Package --> VAC["VerilogACompiler"]
+  VAC --> Parse["Parse to source-range IR"]
+  Parse --> IR["Verilog-A IR"]
+
+  Package --> OVS["OpenVAFSupport"]
+  OVS --> Stage["Run-scoped staging directory"]
+  Stage --> CLI["External openvaf CLI"]
+  CLI --> OSDI["OSDI library (.osdi)"]
+  CLI --> Artifact["Invocation artifact"]
+
+  IR --> Audit["Audit / semantic analysis / future codegen"]
+  OSDI --> Simulator["ngspice pre_osdi"]
+  Artifact --> Review["Audit / retry / human review"]
 ```
 
 ## Goals
 
 | Goal | Behavior |
 |---|---|
-| Swift-first API | Exposes trait-gated compiler APIs, request types, artifacts, and typed errors |
+| Protocol-first compiler API | Exposes small compiler capability protocols through `VerilogACompiler` |
+| Swift-first OpenVAF wrapper | Exposes trait-gated request types, artifacts, and typed errors through `OpenVAFSupport` |
 | Reproducibility | Records command arguments, working directory, source hash, OpenVAF version, environment metadata, stdout, stderr, and timing |
 | Local-first operation | Uses a configured executable, `OPENVAF_BIN`, or `openvaf` on `PATH` |
 | Failure inspection | Compile-specific failures carry `OpenVAFCompilationFailure` metadata |
-| Testability | Resolver and process runner dependencies are injected behind protocols |
+| Testability | Parser, resolver, and process runner dependencies are separated behind protocols |
+| License clarity | Uses OpenVAF as an external executable and oracle, not as linked or copied GPL implementation code |
 
 ## Modules and Implementation Tracks
 
@@ -119,7 +131,7 @@ flowchart TD
 | Default | `VerilogACompilerFrontend`, `VerilogAParsing`, `VerilogAOSDICompiling`, and `CommandLineOpenVAFCompiler` |
 | `OpenVAFCLI` | External OpenVAF process wrapper and `VerilogAOSDICompiling` conformance |
 | `VerilogACompiler` | In-process Verilog-A parser frontend and source-range IR |
-| No traits | Backend protocols and include scanning support |
+| No traits | Shared protocols, request/artifact/error types, and internal include scanning support |
 
 ```bash
 swift build
@@ -138,11 +150,40 @@ swift build --disable-default-traits
 | External tool | Required only when the `OpenVAFCLI` trait is used for real compilation |
 | License | OpenVAFSupport Attribution License 1.0 |
 
-OpenVAF's official installation documentation currently lists pre-compiled executables for Windows and Linux and states that OSX is not supported. On macOS, `OpenVAFSupport` can still wrap a caller-supplied compatible or custom-built OpenVAF executable, but real end-to-end compilation is only available when such an executable is present.
+OpenVAF's official installation documentation currently lists pre-compiled executables for Windows and Linux and states that macOS is not supported. On macOS, `OpenVAFSupport` can still wrap a caller-supplied compatible or custom-built OpenVAF executable, but real end-to-end compilation is only available when such an executable is present.
 
 ## Installation
 
-Add `OpenVAFSupport` as a SwiftPM dependency.
+Add `swift-openvaf` as a SwiftPM dependency.
+
+The current module split is available on `main` and is newer than the latest `0.7.9` tag.
+
+```swift
+.package(
+    url: "https://github.com/1amageek/swift-openvaf.git",
+    branch: "main"
+)
+```
+
+Then add the product you need to your target.
+
+| Product | Use when |
+|---|---|
+| `VerilogACompiler` | You need in-process Verilog-A parsing, compiler protocols, source buffers, and source-range IR |
+| `OpenVAFSupport` | You need to invoke an external OpenVAF executable and collect OSDI artifacts |
+
+```swift
+.product(name: "VerilogACompiler", package: "swift-openvaf"),
+.product(name: "OpenVAFSupport", package: "swift-openvaf")
+```
+
+For local development, use a path dependency.
+
+```swift
+.package(path: "../swift-openvaf")
+```
+
+The latest released tag is `0.7.9`. Use version-based dependencies for released APIs, and use the `main` branch only when you need the current unreleased module split.
 
 ```swift
 .package(
@@ -151,16 +192,48 @@ Add `OpenVAFSupport` as a SwiftPM dependency.
 )
 ```
 
-Then add the product to your target.
+## Quick Start
+
+Use `VerilogACompiler` for in-process parsing without launching OpenVAF.
 
 ```swift
-.product(name: "OpenVAFSupport", package: "swift-openvaf")
+import VerilogACompiler
+
+let source = VerilogASourceBuffer(string: verilogASource)
+let parser: any VerilogAParsing = VerilogACompilerFrontend()
+let result = parser.parse(source)
+
+for module in result.modules {
+    print(module.name(in: result.source))
+}
 ```
 
-For local development, use a path dependency.
+Use `OpenVAFSupport` when an external OpenVAF executable should produce an OSDI artifact.
 
 ```swift
-.package(path: "../swift-openvaf")
+import Foundation
+import OpenVAFSupport
+
+let compiler = CommandLineOpenVAFCompiler()
+let artifact = try await compiler.compile(
+    sourceAt: URL(fileURLWithPath: "/path/to/model.va"),
+    to: URL(fileURLWithPath: "/path/to/build/openvaf")
+)
+
+print(artifact.outputURL.path)
+```
+
+Use `VerilogAOSDICompiling` when code should depend on an OSDI compiler capability instead of a concrete OpenVAF wrapper.
+
+```swift
+import OpenVAFSupport
+import VerilogACompiler
+
+let compiler: any VerilogAOSDICompiling<OpenVAFCompilationArtifact> = CommandLineOpenVAFCompiler()
+let artifact = try await compiler.compileOSDI(
+    sourceAt: URL(fileURLWithPath: "/path/to/model.va"),
+    to: URL(fileURLWithPath: "/path/to/build/openvaf")
+)
 ```
 
 ## Executable Discovery
@@ -194,7 +267,7 @@ let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
 
 Use `.name("openvaf")` only for plain executable file names that should be searched on `PATH`. Use `.path(...)` for non-empty absolute or relative paths. Empty `PATH` components are treated as current-directory searches, matching POSIX command lookup behavior.
 
-## Basic Usage
+## OpenVAF Compilation
 
 This API is available when the `OpenVAFCLI` trait is enabled.
 
@@ -337,7 +410,7 @@ let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
 
 `OpenVAFCompilationRequest.includeRootDirectory` controls which existing local include files may be staged. When omitted, it defaults to the source file's directory.
 
-## Verilog-A Compiler Frontend
+## Verilog-A Compiler Details
 
 This API is available from the `VerilogACompiler` module when the `VerilogACompiler` trait is enabled. `VerilogAParsing` defines the parser boundary, and `VerilogACompilerFrontend` provides the package in-process implementation.
 
@@ -482,7 +555,7 @@ Provide OpenVAF through `OPENVAF_BIN`, `PATH`, or `OpenVAFConfiguration(executab
 
 ## License
 
-`OpenVAFSupport` is distributed under the OpenVAFSupport Attribution License 1.0.
+`swift-openvaf` is distributed under the OpenVAFSupport Attribution License 1.0.
 
 | Permission | Condition |
 |---|---|
@@ -493,20 +566,27 @@ Provide OpenVAF through `OPENVAF_BIN`, `PATH`, or `OpenVAFConfiguration(executab
 | Attribution notice | Required for third-party products, services, tools, libraries, source distributions, binary distributions, and hosted workflows that use the package |
 | Endorsement | The copyright holder name cannot be used to promote derived products without written permission |
 
-This is intentionally not MIT licensed. When `OpenVAFSupport` is used in something made available to third parties, the attribution notice must be visible to users or recipients through an about screen, credits screen, licenses screen, documentation, package metadata, command line `--version` or `--license` output, generated license bundle, or another reasonably accessible location. Private internal use does not require publishing an attribution notice.
+This is intentionally not MIT licensed. When `swift-openvaf` is used in something made available to third parties, the attribution notice must be visible to users or recipients through an about screen, credits screen, licenses screen, documentation, package metadata, command line `--version` or `--license` output, generated license bundle, or another reasonably accessible location. The notice must include the name `OpenVAFSupport`, as required by the license text. Private internal use does not require publishing an attribution notice.
 
 ## Design Notes
 
-`OpenVAFSupport` intentionally wraps OpenVAF as an external process instead of embedding compiler internals. This keeps the Swift package small, testable, and suitable for local toolchain orchestration.
+`swift-openvaf` keeps compiler capabilities and external process orchestration separate. `VerilogACompiler` owns in-process compiler interfaces and source-range IR, while `OpenVAFSupport` wraps OpenVAF as an external process instead of embedding GPL compiler internals.
 
 ```mermaid
 flowchart TD
-  API["OpenVAFCompiler protocol"] --> Impl["CommandLineOpenVAFCompiler"]
+  VAC["VerilogACompiler"] --> Parsing["VerilogAParsing"]
+  VAC --> OSDI["VerilogAOSDICompiling"]
+  Parsing --> Frontend["VerilogACompilerFrontend"]
+
+  OVS["OpenVAFSupport"] --> API["OpenVAFCompiler protocol"]
+  API --> Impl["CommandLineOpenVAFCompiler"]
+  Impl --> OSDI
   Impl --> Resolver["OpenVAFExecutableResolving"]
   Impl --> Runner["OpenVAFProcessRunning"]
   Impl --> Artifact["Compilation artifact"]
+
   Resolver --> TestResolver["Test resolver"]
   Runner --> TestRunner["Test process runner"]
 ```
 
-The package is intended for larger EDA workflows where generated OSDI libraries, process logs, and invocation metadata must be auditable and reproducible.
+The package is intended for larger EDA workflows where parsed source structure, generated OSDI libraries, process logs, and invocation metadata must be auditable and reproducible.
