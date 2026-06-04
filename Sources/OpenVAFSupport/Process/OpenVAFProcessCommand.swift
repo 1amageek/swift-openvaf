@@ -9,6 +9,7 @@ package struct OpenVAFProcessCommand: Sendable, Equatable {
     package let workingDirectory: URL
     package let timeout: Duration
     package let terminationGrace: Duration
+    package let postExitOutputDrainGrace: Duration
 
     package init(
         executableURL: URL,
@@ -16,7 +17,8 @@ package struct OpenVAFProcessCommand: Sendable, Equatable {
         environment: [String: String]?,
         workingDirectory: URL,
         timeout: Duration,
-        terminationGrace: Duration
+        terminationGrace: Duration,
+        postExitOutputDrainGrace: Duration = .milliseconds(100)
     ) {
         self.executableURL = executableURL
         self.arguments = arguments
@@ -24,6 +26,7 @@ package struct OpenVAFProcessCommand: Sendable, Equatable {
         self.workingDirectory = workingDirectory
         self.timeout = timeout
         self.terminationGrace = terminationGrace
+        self.postExitOutputDrainGrace = postExitOutputDrainGrace
     }
 }
 

@@ -55,6 +55,40 @@ struct VerilogACompilerFrontendTests {
 
         #expect(identifier.range == VerilogASourceRange(lowerBound: 7, upperBound: 15))
         #expect(source.string(in: identifier.range) == "resistor")
+        #expect(try source.validatedString(in: identifier.range) == "resistor")
+    }
+
+    @Test("Source buffer validates source ranges without clamping")
+    func sourceBufferValidatesSourceRangesWithoutClamping() throws {
+        let source = VerilogASourceBuffer(string: "abc")
+
+        #expect(source.string(in: VerilogASourceRange(lowerBound: -2, upperBound: 2)) == "ab")
+        #expect(try source.validatedString(in: VerilogASourceRange(lowerBound: 0, upperBound: 3)) == "abc")
+        #expect(try source.validatedString(in: VerilogASourceRange(lowerBound: 1, upperBound: 1)) == "")
+
+        #expect(throws: VerilogASourceRangeError.invalidRange(
+            VerilogASourceRange(lowerBound: -1, upperBound: 1),
+            sourceByteCount: 3,
+            message: "Lower bound must not be negative"
+        )) {
+            try source.validatedString(in: VerilogASourceRange(lowerBound: -1, upperBound: 1))
+        }
+
+        #expect(throws: VerilogASourceRangeError.invalidRange(
+            VerilogASourceRange(lowerBound: 2, upperBound: 1),
+            sourceByteCount: 3,
+            message: "Upper bound must be greater than or equal to lower bound"
+        )) {
+            try source.validate(VerilogASourceRange(lowerBound: 2, upperBound: 1))
+        }
+
+        #expect(throws: VerilogASourceRangeError.invalidRange(
+            VerilogASourceRange(lowerBound: 0, upperBound: 4),
+            sourceByteCount: 3,
+            message: "Upper bound must not exceed source byte count"
+        )) {
+            try source.validatedString(in: VerilogASourceRange(lowerBound: 0, upperBound: 4))
+        }
     }
 
     @Test("Lexer handles comments, escaped identifiers, exponents, and escaped strings")

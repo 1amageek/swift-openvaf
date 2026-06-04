@@ -446,6 +446,15 @@ struct CommandLineOpenVAFCompilerTests {
 
         #expect(artifact.sourceURL == sourceURL)
         #expect(artifact.sourceSHA256 == "7a3d26582b481c84f7300001cbf01b123be5c77da0da7bd1b690a406c5b11687")
+        #expect(artifact.inputFiles.count == 1)
+        if let inputFile = artifact.inputFiles.first {
+            #expect(inputFile.role == .primarySource)
+            #expect(inputFile.logicalPath == "resistor.va")
+            #expect(inputFile.sourceURL == sourceURL)
+            #expect(inputFile.stagedRelativePath == "resistor.va")
+            #expect(inputFile.stagedURL == artifact.stagedSourceURL)
+            #expect(inputFile.sha256 == artifact.sourceSHA256)
+        }
         #expect(artifact.stagedSourceURL == artifact.command.workingDirectory.appendingPathComponent("resistor.va"))
         #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("resistor.osdi"))
         #expect(artifact.openVAFVersion == "1.2.3")
@@ -1299,6 +1308,21 @@ module model; endmodule
 
         #expect(artifact.stagedSourceURL == artifact.command.workingDirectory.appendingPathComponent("model.va"))
         #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("model.osdi"))
+        #expect(artifact.inputFiles.map(\.role) == [.primarySource, .include])
+
+        let primaryInput = try #require(artifact.inputFiles.first)
+        #expect(primaryInput.logicalPath == "model.va")
+        #expect(primaryInput.sourceURL == sourceURL)
+        #expect(primaryInput.stagedRelativePath == "model.va")
+        #expect(primaryInput.stagedURL == artifact.stagedSourceURL)
+        #expect(primaryInput.sha256 == artifact.sourceSHA256)
+
+        let includeInput = try #require(artifact.inputFiles.dropFirst().first)
+        #expect(includeInput.logicalPath == "params.inc")
+        #expect(includeInput.sourceURL == includeURL.standardized)
+        #expect(includeInput.stagedRelativePath == "params.inc")
+        #expect(includeInput.stagedURL == artifact.command.workingDirectory.appendingPathComponent("params.inc"))
+        #expect(includeInput.sha256 == "c40920d60a3a1af7ffbcacc7ec5bd8e0ed36c987b7c51ca579869d2acad5d7aa")
     }
 
     @Test("Compile stages first include when source starts with UTF-8 byte order mark")
@@ -2329,6 +2353,16 @@ module model; endmodule
                 #expect(failure.standardOutput == "")
                 #expect(failure.standardError == "syntax error")
                 #expect(failure.sourceURL == sourceURL)
+                #expect(failure.sourceSHA256 == "241514cca3430f01b8e7bcf403cb1b7c79675d0b59b6c01f694e544708d57607")
+                #expect(failure.inputFiles.count == 1)
+                if let inputFile = failure.inputFiles.first {
+                    #expect(inputFile.role == .primarySource)
+                    #expect(inputFile.logicalPath == "bad.va")
+                    #expect(inputFile.sourceURL == sourceURL)
+                    #expect(inputFile.stagedRelativePath == "bad.va")
+                    #expect(inputFile.stagedURL == failure.stagedSourceURL)
+                    #expect(inputFile.sha256 == failure.sourceSHA256)
+                }
                 #expect(failure.stagedSourceURL.lastPathComponent == "bad.va")
                 #expect(failure.outputURL.lastPathComponent == "bad.osdi")
                 #expect(failure.command.arguments == ["bad.va"])
@@ -3162,6 +3196,43 @@ module model; endmodule
         await #expect(throws: OpenVAFError.invalidConfiguration(
             field: "compileTimeout",
             message: "Duration must be greater than zero"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
+    @Test("Compile rejects negative post-exit output drain grace before staging")
+    func compileRejectsNegativePostExitOutputDrainGraceBeforeStaging() async throws {
+        let sandbox = try TemporaryDirectory(name: "invalid-post-exit-output-drain-grace")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(
+                terminationGrace: .milliseconds(10),
+                postExitOutputDrainGrace: .seconds(-1),
+                processEnvironment: ["PATH": sandbox.url.path]
+            ),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when post-exit output drain grace is invalid")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.invalidConfiguration(
+            field: "postExitOutputDrainGrace",
+            message: "Duration must not be negative"
         )) {
             try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
         }

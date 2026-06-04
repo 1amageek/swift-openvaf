@@ -56,7 +56,8 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             environment: environment,
             workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
             timeout: configuration.availabilityTimeout,
-            terminationGrace: configuration.terminationGrace
+            terminationGrace: configuration.terminationGrace,
+            postExitOutputDrainGrace: configuration.postExitOutputDrainGrace
         )
 
         return await queryAvailability(command: command)
@@ -152,7 +153,8 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             environment: environment,
             workingDirectory: prepared.commandWorkingDirectory,
             timeout: configuration.compileTimeout,
-            terminationGrace: configuration.terminationGrace
+            terminationGrace: configuration.terminationGrace,
+            postExitOutputDrainGrace: configuration.postExitOutputDrainGrace
         )
 
         do {
@@ -187,6 +189,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             return OpenVAFCompilationArtifact(
                 sourceURL: prepared.requestedSourceURL,
                 sourceSHA256: prepared.sourceSHA256,
+                inputFiles: prepared.inputFiles,
                 stagedSourceURL: prepared.stagedSourceURL,
                 outputURL: prepared.outputURL,
                 command: commandRecord,
@@ -222,6 +225,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         let stagedSourceURL: URL
         let outputURL: URL
         let sourceSHA256: String
+        let inputFiles: [OpenVAFInputFileRecord]
     }
 
     private struct ValidatedSource {
@@ -267,6 +271,10 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         try validateNonNegativeDuration(
             configuration.terminationGrace,
             field: "terminationGrace"
+        )
+        try validateNonNegativeDuration(
+            configuration.postExitOutputDrainGrace,
+            field: "postExitOutputDrainGrace"
         )
 
         if use == .compile {
@@ -591,8 +599,9 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             )
         }
 
+        let includeInputFiles: [OpenVAFInputFileRecord]
         do {
-            try stageIncludesDiscoveredFromStagedFiles(
+            includeInputFiles = try stageIncludesDiscoveredFromStagedFiles(
                 sourceLogicalURL: source.sourceURL,
                 sourceResolvedURL: sourceCopyURL,
                 sourceRootDirectory: sourceRootDirectory,
@@ -611,8 +620,18 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         }
 
         let sourceSHA256: String
+        let primaryInputFile: OpenVAFInputFileRecord
         do {
             sourceSHA256 = try sha256HexDigest(of: stagedSourceURL)
+            primaryInputFile = try inputFileRecord(
+                role: .primarySource,
+                logicalURL: source.sourceURL,
+                sourceURL: source.requestedSourceURL,
+                sourceRootDirectory: sourceRootDirectory,
+                stagedURL: stagedSourceURL,
+                stagingRootDirectory: stagingRootDirectory,
+                sha256: sourceSHA256
+            )
         } catch {
             cleanupFailedStaging(
                 stagingRootDirectory: stagingRootDirectory,
@@ -629,7 +648,8 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             commandWorkingDirectory: commandWorkingDirectory,
             stagedSourceURL: stagedSourceURL,
             outputURL: outputURL,
-            sourceSHA256: sourceSHA256
+            sourceSHA256: sourceSHA256,
+            inputFiles: sortedInputFileRecords([primaryInputFile] + includeInputFiles)
         )
     }
 
@@ -678,7 +698,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         stagedSourceURL: URL,
         outputURL: URL,
         outputFileName: String
-    ) throws(OpenVAFError) {
+    ) throws(OpenVAFError) -> [OpenVAFInputFileRecord] {
         var pending = [PendingIncludeScan(
             logicalURL: sourceLogicalURL,
             stagedURL: stagedSourceURL,
@@ -687,6 +707,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         )]
         var scannedContexts: Set<IncludeScanContext> = []
         var stagedIncludes: Set<String> = []
+        var inputFiles: [OpenVAFInputFileRecord] = []
 
         while let pendingScan = pending.popLast() {
             let currentURL = pendingScan.logicalURL
@@ -752,6 +773,17 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                     )
                 }
 
+                let includeSHA256 = try sha256HexDigest(of: stagedIncludeURL)
+                inputFiles.append(try inputFileRecord(
+                    role: .include,
+                    logicalURL: includeURL,
+                    sourceURL: includeURL,
+                    sourceRootDirectory: sourceRootDirectory,
+                    stagedURL: stagedIncludeURL,
+                    stagingRootDirectory: stagingRootDirectory,
+                    sha256: includeSHA256
+                ))
+
                 let includeScanKey = copySourceURL.standardized.path
                 if !descendantResolvedPaths.contains(includeScanKey) {
                     pending.append(PendingIncludeScan(
@@ -762,6 +794,38 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                     ))
                 }
             }
+        }
+        return inputFiles
+    }
+
+    private func inputFileRecord(
+        role: OpenVAFInputFileRole,
+        logicalURL: URL,
+        sourceURL: URL,
+        sourceRootDirectory: URL,
+        stagedURL: URL,
+        stagingRootDirectory: URL,
+        sha256: String
+    ) throws(OpenVAFError) -> OpenVAFInputFileRecord {
+        OpenVAFInputFileRecord(
+            role: role,
+            logicalPath: try relativePath(from: sourceRootDirectory, to: logicalURL),
+            sourceURL: sourceURL,
+            stagedRelativePath: try relativePath(from: stagingRootDirectory, to: stagedURL),
+            stagedURL: stagedURL,
+            sha256: sha256
+        )
+    }
+
+    private func sortedInputFileRecords(_ inputFiles: [OpenVAFInputFileRecord]) -> [OpenVAFInputFileRecord] {
+        inputFiles.sorted { lhs, rhs in
+            if lhs.role != rhs.role {
+                return lhs.role == .primarySource
+            }
+            if lhs.stagedRelativePath != rhs.stagedRelativePath {
+                return lhs.stagedRelativePath < rhs.stagedRelativePath
+            }
+            return lhs.logicalPath < rhs.logicalPath
         }
     }
 
@@ -1128,7 +1192,8 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             environment: environment,
             workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
             timeout: configuration.availabilityTimeout,
-            terminationGrace: configuration.terminationGrace
+            terminationGrace: configuration.terminationGrace,
+            postExitOutputDrainGrace: configuration.postExitOutputDrainGrace
         )
 
         for _ in 0..<Self.maximumInstallationQueryAttempts {
@@ -1241,6 +1306,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         OpenVAFCompilationFailure(
             sourceURL: prepared.requestedSourceURL,
             sourceSHA256: prepared.sourceSHA256,
+            inputFiles: prepared.inputFiles,
             stagedSourceURL: prepared.stagedSourceURL,
             outputURL: prepared.outputURL,
             command: command,

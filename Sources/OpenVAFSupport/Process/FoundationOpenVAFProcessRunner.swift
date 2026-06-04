@@ -5,7 +5,6 @@ import Darwin
 
 package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
     private static let pipeReadRetryInterval: Duration = .milliseconds(5)
-    private static let postExitPipeDrainGrace: Duration = .milliseconds(100)
 
     package init() {}
 
@@ -25,6 +24,7 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
         let executablePath = command.executableURL.path
         let timeout = command.timeout
         let terminationGrace = command.terminationGrace
+        let postExitOutputDrainGrace = command.postExitOutputDrainGrace
         let timeoutTask = ProcessTimeoutTask()
         let controller = ProcessController(process: process)
         let exitState = ProcessExitState()
@@ -59,14 +59,16 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
             let outputTask = Task.detached(priority: nil) {
                 let data = await Self.readAllData(
                     from: outputPipe.fileHandleForReading.fileDescriptor,
-                    coordinator: coordinator
+                    coordinator: coordinator,
+                    postExitDrainGrace: postExitOutputDrainGrace
                 )
                 await coordinator.recordOutput(data)
             }
             let errorTask = Task.detached(priority: nil) {
                 let data = await Self.readAllData(
                     from: errorPipe.fileHandleForReading.fileDescriptor,
-                    coordinator: coordinator
+                    coordinator: coordinator,
+                    postExitDrainGrace: postExitOutputDrainGrace
                 )
                 await coordinator.recordError(data)
             }
@@ -132,7 +134,8 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
 
     private static func readAllData(
         from fileDescriptor: Int32,
-        coordinator: ProcessRunCoordinator
+        coordinator: ProcessRunCoordinator,
+        postExitDrainGrace: Duration
     ) async -> Data {
         let clock = ContinuousClock()
         let originalFlags = fcntl(fileDescriptor, F_GETFL)
@@ -156,7 +159,7 @@ package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
             if await coordinator.hasProcessFinished() {
                 let now = clock.now
                 if let drainBeganAt = postExitDrainBeganAt {
-                    if drainBeganAt.duration(to: now) >= Self.postExitPipeDrainGrace {
+                    if drainBeganAt.duration(to: now) >= postExitDrainGrace {
                         break
                     }
                 } else {

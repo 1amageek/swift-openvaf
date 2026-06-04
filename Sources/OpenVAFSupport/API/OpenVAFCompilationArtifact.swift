@@ -4,6 +4,7 @@ import Foundation
 public struct OpenVAFCompilationArtifact: Sendable, Equatable {
     public let sourceURL: URL
     public let sourceSHA256: String
+    public let inputFiles: [OpenVAFInputFileRecord]
     public let stagedSourceURL: URL
     public let outputURL: URL
     public let command: OpenVAFCommandRecord
@@ -17,6 +18,7 @@ public struct OpenVAFCompilationArtifact: Sendable, Equatable {
     public init(
         sourceURL: URL,
         sourceSHA256: String,
+        inputFiles: [OpenVAFInputFileRecord] = [],
         stagedSourceURL: URL,
         outputURL: URL,
         command: OpenVAFCommandRecord,
@@ -29,6 +31,7 @@ public struct OpenVAFCompilationArtifact: Sendable, Equatable {
     ) {
         self.sourceURL = sourceURL
         self.sourceSHA256 = sourceSHA256
+        self.inputFiles = inputFiles
         self.stagedSourceURL = stagedSourceURL
         self.outputURL = outputURL
         self.command = command

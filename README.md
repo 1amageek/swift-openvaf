@@ -29,7 +29,7 @@ flowchart TD
 |---|---|
 | Protocol-first compiler API | Exposes small compiler capability protocols through `VerilogACompiler` |
 | Swift-first OpenVAF wrapper | Exposes trait-gated request types, artifacts, and typed errors through `OpenVAFSupport` |
-| Reproducibility | Records command arguments, working directory, source hash, OpenVAF version, environment metadata, stdout, stderr, and timing |
+| Reproducibility | Records command arguments, working directory, staged input file hashes, OpenVAF version, environment metadata, stdout, stderr, and timing |
 | Local-first operation | Uses a configured executable, `OPENVAF_BIN`, or `openvaf` on `PATH` |
 | Failure inspection | Compile-specific failures carry `OpenVAFCompilationFailure` metadata |
 | Testability | Parser, resolver, and process runner dependencies are separated behind protocols |
@@ -156,12 +156,12 @@ OpenVAF's official installation documentation currently lists pre-compiled execu
 
 Add `swift-openvaf` as a SwiftPM dependency.
 
-The current module split is available on `main` and is newer than the latest `0.7.9` tag.
+The current module split is available from `0.8.0`.
 
 ```swift
 .package(
     url: "https://github.com/1amageek/swift-openvaf.git",
-    branch: "main"
+    from: "0.8.0"
 )
 ```
 
@@ -183,12 +183,12 @@ For local development, use a path dependency.
 .package(path: "../swift-openvaf")
 ```
 
-The latest released tag is `0.7.9`. Use version-based dependencies for released APIs, and use the `main` branch only when you need the current unreleased module split.
+The latest released tag is `0.8.0`. Use version-based dependencies for released APIs, and use the `main` branch only when you need unreleased changes.
 
 ```swift
 .package(
     url: "https://github.com/1amageek/swift-openvaf.git",
-    from: "0.7.9"
+    from: "0.8.0"
 )
 ```
 
@@ -289,6 +289,9 @@ let artifact = try await compiler.compile(
 
 print(artifact.outputURL.path)
 print(artifact.sourceSHA256)
+for inputFile in artifact.inputFiles {
+    print("\(inputFile.stagedRelativePath): \(inputFile.sha256)")
+}
 ```
 
 ## Custom Output Name
@@ -357,6 +360,7 @@ Successful compilations return `OpenVAFCompilationArtifact`.
 |---|---|
 | `sourceURL` | Original source URL passed by the caller |
 | `sourceSHA256` | SHA-256 hash of the staged source |
+| `inputFiles` | Fingerprints for the primary staged source and all staged local includes |
 | `stagedSourceURL` | Source file copied into the run-scoped working directory |
 | `outputURL` | Expected OSDI output URL |
 | `command` | Sanitized command metadata |
@@ -367,6 +371,17 @@ Successful compilations return `OpenVAFCompilationArtifact`.
 | `startedAt` / `finishedAt` | Process timing |
 
 `sourceURL` preserves the caller's requested source URL for auditability. The compiler validates and normalizes local file paths internally before reading, staging, and launching OpenVAF.
+
+`inputFiles` is ordered with the primary source first, followed by staged include files sorted by staged relative path.
+
+| `OpenVAFInputFileRecord` field | Meaning |
+|---|---|
+| `role` | `.primarySource` or `.include` |
+| `logicalPath` | Source-root-relative path before staging |
+| `sourceURL` | Caller or local include URL used to locate the file |
+| `stagedRelativePath` | Path inside the run-scoped staging directory |
+| `stagedURL` | Full URL of the staged snapshot |
+| `sha256` | SHA-256 hash of the staged snapshot bytes |
 
 `OpenVAFCommandRecord` stores redacted environment metadata. Environment values are not persisted directly; `OpenVAFEnvironmentRecord.valueSHA256` records a fingerprint for reproducibility checks.
 
@@ -402,11 +417,12 @@ let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
 | `compileTimeout` | 300 seconds | Maximum compile duration |
 | `availabilityTimeout` | 10 seconds | Maximum `--version` duration |
 | `terminationGrace` | 2 seconds | Grace period before force-killing a terminated process |
+| `postExitOutputDrainGrace` | 100 milliseconds | Maximum time to continue draining stdout/stderr after the direct process exits while inherited pipe writers remain open |
 | `processEnvironment` | `nil` | Uses inherited process environment when `nil` |
 | `compilerArguments` | `[]` | Extra arguments passed before the staged source name |
 | `keepsFailedWorkingDirectories` | `false` | Preserves failed staging directories when enabled |
 
-`compileTimeout` and `availabilityTimeout` must be greater than zero. `terminationGrace` must not be negative. Executable paths must not be empty. Explicit environment keys and compiler arguments must be representable at the POSIX process boundary. Invalid configuration is reported as a typed error before staging or launching a process.
+`compileTimeout` and `availabilityTimeout` must be greater than zero. `terminationGrace` and `postExitOutputDrainGrace` must not be negative. Executable paths must not be empty. Explicit environment keys and compiler arguments must be representable at the POSIX process boundary. Invalid configuration is reported as a typed error before staging or launching a process.
 
 `OpenVAFCompilationRequest.includeRootDirectory` controls which existing local include files may be staged. When omitted, it defaults to the source file's directory.
 
@@ -436,7 +452,7 @@ let compiler: any VerilogAOSDICompiling<OpenVAFCompilationArtifact> = CommandLin
 let artifact = try await compiler.compileOSDI(sourceAt: sourceURL, to: outputDirectory)
 ```
 
-The frontend stores source text once in `VerilogASourceBuffer`. Tokens and parsed IR carry `VerilogASourceRange` byte ranges into that buffer, so downstream semantic analysis and code generation can defer string materialization.
+The frontend stores source text once in `VerilogASourceBuffer`. Tokens and parsed IR carry `VerilogASourceRange` byte ranges into that buffer, so downstream semantic analysis and code generation can defer string materialization. Use `validatedString(in:)` or `validate(_:)` when a caller needs invalid source ranges to fail explicitly instead of using the clamping behavior of `string(in:)`.
 
 `parse(contentsOf:)` accepts local `file://` URLs only. Non-file schemes, non-local file URL hosts, empty paths, and paths containing NUL are rejected before source bytes are read.
 
@@ -461,6 +477,7 @@ Current compiler frontend coverage:
 | `notExecutable` | The resolved file is not executable |
 | `invalidOutputFileName` | `outputFileName` is empty, contains NUL, contains path components, is not `.osdi`, or would collide with a staged include |
 | `invalidSourceURL` | The Verilog-A compiler frontend source URL is not a local file URL or has an invalid file path |
+| `VerilogASourceRangeError.invalidRange` | A caller asks `VerilogASourceBuffer` to validate a source range outside the buffer |
 | `fileSystemFailure` | Source validation, staging, hashing, or directory creation fails |
 | `launchFailed` | The process cannot be launched |
 | `timedOut` / `cancelled` | Availability checks time out or are cancelled |
@@ -490,11 +507,11 @@ The test suite covers:
 | Area | Coverage |
 |---|---|
 | Resolver | Environment precedence, `PATH` lookup, executable regular file validation, non-executable rejection |
-| Compiler | Availability, regular source staging, local include staging with inactive conditional include filtering, streamed source hashing, custom output names, version caching, cleanup policy |
+| Compiler | Availability, regular source staging, local include staging with inactive conditional include filtering, staged input file fingerprints, streamed source hashing, custom output names, version caching, cleanup policy |
 | Integration | Fake `openvaf` executable through real `PATH` resolution, process execution, staging, and artifact validation |
 | Failure artifacts | Non-zero exit, timeout, cancellation, missing or invalid output |
-| Process runner | stdout/stderr capture, stdin EOF isolation, large output drain, inherited pipe handles, invalid UTF-8, launch failure, timeout, cancellation |
-| Verilog-A compiler frontend | Lexer diagnostics, UTF-8 byte order mark handling, source ranges, escaped identifiers, numeric forms, preprocessor conditionals with comment-prefixed directives, continued preprocessor directive bodies, function-like line-start macro invocation recovery including comment-prefixed, multiline, and unterminated invocations, object-like macro prefixes followed by real syntax, ANSI inline port declaration IR, declaration and parameter attributes, unterminated attribute diagnostics, declarator and module-boundary recovery diagnostics, qualifier-style declarators, variables, branches, multi-declarator and dimensioned parameters, brace-delimited parameter defaults, parameter constraint clauses, analog functions, nested analog blocks, compound analog statements, analog initial blocks, analog case ranges, multi-module parsing |
+| Process runner | stdout/stderr capture, stdin EOF isolation, large output drain, inherited pipe handles, configurable post-exit output draining, invalid UTF-8, launch failure, timeout, cancellation |
+| Verilog-A compiler frontend | Lexer diagnostics, UTF-8 byte order mark handling, source ranges, source range validation, escaped identifiers, numeric forms, preprocessor conditionals with comment-prefixed directives, continued preprocessor directive bodies, function-like line-start macro invocation recovery including comment-prefixed, multiline, and unterminated invocations, object-like macro prefixes followed by real syntax, ANSI inline port declaration IR, declaration and parameter attributes, unterminated attribute diagnostics, declarator and module-boundary recovery diagnostics, qualifier-style declarators, variables, branches, multi-declarator and dimensioned parameters, brace-delimited parameter defaults, parameter constraint clauses, analog functions, nested analog blocks, compound analog statements, analog initial blocks, analog case ranges, multi-module parsing |
 | Oracle comparison | Compiler frontend parse results compared against multiple independently authored sources that OpenVAF compiles successfully |
 | Upstream parity | Verilog-A compiler frontend values compared with OpenVAF `openvaf/test_data` frontend fixtures when `OPENVAF_UPSTREAM_ROOT` points at an OpenVAF checkout |
 | End-to-end | Real OpenVAF Verilog-A to OSDI compile when a compatible OpenVAF executable is available |

@@ -126,6 +126,25 @@ struct FoundationOpenVAFProcessRunnerTests {
         #expect(elapsed < .seconds(1))
     }
 
+    @Test("Run honors custom post-exit output drain grace")
+    func runHonorsCustomPostExitOutputDrainGrace() async throws {
+        let runner = FoundationOpenVAFProcessRunner()
+        let command = OpenVAFProcessCommand(
+            executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "(sleep 0.15; printf delayed) & printf done"],
+            environment: nil,
+            workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+            timeout: .seconds(5),
+            terminationGrace: .milliseconds(10),
+            postExitOutputDrainGrace: .milliseconds(400)
+        )
+
+        let result = try await runner.run(command)
+
+        #expect(result.exitCode == 0)
+        #expect(result.standardOutput == "donedelayed")
+    }
+
     @Test("Run does not time out after the direct process already exited")
     func runDoesNotTimeOutAfterTheDirectProcessAlreadyExited() async throws {
         let runner = FoundationOpenVAFProcessRunner()

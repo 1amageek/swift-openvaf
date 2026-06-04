@@ -8,6 +8,7 @@ public struct OpenVAFConfiguration: Sendable {
     public var compileTimeout: Duration
     public var availabilityTimeout: Duration
     public var terminationGrace: Duration
+    public var postExitOutputDrainGrace: Duration
     public var processEnvironment: [String: String]?
     public var compilerArguments: [String]
     public var keepsFailedWorkingDirectories: Bool
@@ -17,6 +18,7 @@ public struct OpenVAFConfiguration: Sendable {
         compileTimeout: Duration = .seconds(300),
         availabilityTimeout: Duration = .seconds(10),
         terminationGrace: Duration = .seconds(2),
+        postExitOutputDrainGrace: Duration = .milliseconds(100),
         processEnvironment: [String: String]? = nil,
         compilerArguments: [String] = [],
         keepsFailedWorkingDirectories: Bool = false
@@ -25,6 +27,7 @@ public struct OpenVAFConfiguration: Sendable {
         self.compileTimeout = compileTimeout
         self.availabilityTimeout = availabilityTimeout
         self.terminationGrace = terminationGrace
+        self.postExitOutputDrainGrace = postExitOutputDrainGrace
         self.processEnvironment = processEnvironment
         self.compilerArguments = compilerArguments
         self.keepsFailedWorkingDirectories = keepsFailedWorkingDirectories

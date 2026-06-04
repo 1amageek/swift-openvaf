@@ -76,6 +76,38 @@ public struct VerilogASourceBuffer: Sendable, Equatable {
         return String(decoding: data[boundedRange.lowerBound..<boundedRange.upperBound], as: UTF8.self)
     }
 
+    public func validatedString(in range: VerilogASourceRange) throws(VerilogASourceRangeError) -> String {
+        try validate(range)
+        guard !range.isEmpty else { return "" }
+        return String(decoding: data[range.lowerBound..<range.upperBound], as: UTF8.self)
+    }
+
+    public func validate(_ range: VerilogASourceRange) throws(VerilogASourceRangeError) {
+        guard range.lowerBound >= 0 else {
+            throw .invalidRange(
+                range,
+                sourceByteCount: data.count,
+                message: "Lower bound must not be negative"
+            )
+        }
+
+        guard range.upperBound >= range.lowerBound else {
+            throw .invalidRange(
+                range,
+                sourceByteCount: data.count,
+                message: "Upper bound must be greater than or equal to lower bound"
+            )
+        }
+
+        guard range.upperBound <= data.count else {
+            throw .invalidRange(
+                range,
+                sourceByteCount: data.count,
+                message: "Upper bound must not exceed source byte count"
+            )
+        }
+    }
+
     package func byte(at offset: Int) -> UInt8? {
         guard offset >= 0, offset < data.count else { return nil }
         return data[offset]

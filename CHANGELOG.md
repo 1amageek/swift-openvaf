@@ -4,6 +4,8 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+## 0.8.0 - 2026-06-04
+
 ### Added
 
 - Add the first package Verilog-A compiler frontend slice with source buffers, source-range tokens, a Verilog-A lexer, a module parser, and lightweight module IR for future semantic analysis and OSDI generation.
@@ -34,6 +36,14 @@ All notable changes to this package will be documented in this file.
 - Add compiler frontend source URL validation so `parse(contentsOf:)` rejects non-file URLs, non-local file hosts, empty paths, and NUL-containing paths before reading source bytes.
 - Add brace-delimited parameter default handling so commas and nested delimiters inside `{ ... }` do not split parameter declarators or truncate default-value ranges.
 - Filter include staging through Verilog-A conditional directives so inactive `include` lines do not trigger missing-file or unsafe-path validation before OpenVAF runs.
+- Add staged input file fingerprint records for primary sources and includes to successful and failed OpenVAF compilation artifacts.
+- Add validating source-range access through `VerilogASourceBuffer.validatedString(in:)` and `VerilogASourceBuffer.validate(_:)`.
+- Add configurable post-exit process output drain grace through `OpenVAFConfiguration.postExitOutputDrainGrace`.
+
+### Fixed
+
+- Capture delayed inherited-pipe output with caller-configurable drain grace instead of relying on a fixed internal value.
+- Update SwiftPM installation guidance to start from 0.8.0.
 
 ## 0.7.9 - 2026-06-04
 
