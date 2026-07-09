@@ -519,7 +519,7 @@ struct CommandLineOpenVAFCompilerTests {
         let sandbox = try TemporaryDirectory(name: "non-file-source-url")
         defer { sandbox.remove() }
 
-        let sourceURL = URL(string: "https://example.com/model.va")!
+        let sourceURL = try #require(URL(string: "https://example.com/model.va"))
         let outputDirectory = sandbox.url.appendingPathComponent("out")
         let compiler = CommandLineOpenVAFCompiler(
             configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
@@ -552,7 +552,7 @@ struct CommandLineOpenVAFCompilerTests {
         defer { sandbox.remove() }
 
         let sourceURL = sandbox.url.appendingPathComponent("model.va")
-        let outputDirectory = URL(string: "https://example.com/build/openvaf")!
+        let outputDirectory = try #require(URL(string: "https://example.com/build/openvaf"))
         try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
 
         let compiler = CommandLineOpenVAFCompiler(
@@ -645,7 +645,7 @@ struct CommandLineOpenVAFCompilerTests {
 
         let sourceURL = sandbox.url.appendingPathComponent("model.va")
         let outputDirectory = sandbox.url.appendingPathComponent("out")
-        let includeRootDirectory = URL(string: "https://example.com/project")!
+        let includeRootDirectory = try #require(URL(string: "https://example.com/project"))
         try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
 
         let compiler = CommandLineOpenVAFCompiler(
@@ -682,7 +682,7 @@ struct CommandLineOpenVAFCompilerTests {
         let sandbox = try TemporaryDirectory(name: "file-source-url-host")
         defer { sandbox.remove() }
 
-        let sourceURL = URL(string: "file://example.com\(sandbox.url.path)/model.va")!
+        let sourceURL = try #require(URL(string: "file://example.com\(sandbox.url.path)/model.va"))
         let outputDirectory = sandbox.url.appendingPathComponent("out")
         let compiler = CommandLineOpenVAFCompiler(
             configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
@@ -715,7 +715,7 @@ struct CommandLineOpenVAFCompilerTests {
         defer { sandbox.remove() }
 
         let sourceURL = sandbox.url.appendingPathComponent("model.va")
-        let outputDirectory = URL(string: "file://example.com\(sandbox.url.path)/out")!
+        let outputDirectory = try #require(URL(string: "file://example.com\(sandbox.url.path)/out"))
         try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
 
         let compiler = CommandLineOpenVAFCompiler(
@@ -750,7 +750,7 @@ struct CommandLineOpenVAFCompilerTests {
 
         let missingSourceURL = sandbox.url.appendingPathComponent("missing.va")
         let outputDirectory = sandbox.url.appendingPathComponent("out")
-        let includeRootDirectory = URL(string: "file://example.com\(sandbox.url.path)/project")!
+        let includeRootDirectory = try #require(URL(string: "file://example.com\(sandbox.url.path)/project"))
         let compiler = CommandLineOpenVAFCompiler(
             configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
             executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
@@ -785,7 +785,7 @@ struct CommandLineOpenVAFCompilerTests {
         let sandbox = try TemporaryDirectory(name: "empty-file-source-url-path")
         defer { sandbox.remove() }
 
-        let sourceURL = URL(string: "file://localhost")!
+        let sourceURL = try #require(URL(string: "file://localhost"))
         let outputDirectory = sandbox.url.appendingPathComponent("out")
         let compiler = CommandLineOpenVAFCompiler(
             configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
@@ -818,7 +818,7 @@ struct CommandLineOpenVAFCompilerTests {
         defer { sandbox.remove() }
 
         let sourceURL = sandbox.url.appendingPathComponent("model.va")
-        let outputDirectory = URL(string: "file://localhost")!
+        let outputDirectory = try #require(URL(string: "file://localhost"))
         try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
 
         let compiler = CommandLineOpenVAFCompiler(
@@ -853,7 +853,7 @@ struct CommandLineOpenVAFCompilerTests {
 
         let missingSourceURL = sandbox.url.appendingPathComponent("missing.va")
         let outputDirectory = sandbox.url.appendingPathComponent("out")
-        let includeRootDirectory = URL(string: "file://localhost")!
+        let includeRootDirectory = try #require(URL(string: "file://localhost"))
         let compiler = CommandLineOpenVAFCompiler(
             configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
             executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
@@ -888,10 +888,10 @@ struct CommandLineOpenVAFCompilerTests {
         let sandbox = try TemporaryDirectory(name: "source-path-nul")
         defer { sandbox.remove() }
 
-        let sourceURL = URL(string: sandbox.url
+        let sourceURL = try #require(URL(string: sandbox.url
             .appendingPathComponent("model.va")
             .absoluteString
-            .replacingOccurrences(of: "model.va", with: "model%00.va"))!
+            .replacingOccurrences(of: "model.va", with: "model%00.va")))
         let outputDirectory = sandbox.url.appendingPathComponent("out")
         let compiler = CommandLineOpenVAFCompiler(
             configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
@@ -924,9 +924,9 @@ struct CommandLineOpenVAFCompilerTests {
         defer { sandbox.remove() }
 
         let sourceURL = sandbox.url.appendingPathComponent("model.va")
-        let outputDirectory = URL(string: sandbox.url
+        let outputDirectory = try #require(URL(string: sandbox.url
             .appendingPathComponent("out")
-            .absoluteString + "%00")!
+            .absoluteString + "%00"))
         try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
 
         let compiler = CommandLineOpenVAFCompiler(
@@ -961,9 +961,9 @@ struct CommandLineOpenVAFCompilerTests {
 
         let missingSourceURL = sandbox.url.appendingPathComponent("missing.va")
         let outputDirectory = sandbox.url.appendingPathComponent("out")
-        let includeRootDirectory = URL(string: sandbox.url
+        let includeRootDirectory = try #require(URL(string: sandbox.url
             .appendingPathComponent("project")
-            .absoluteString + "%00")!
+            .absoluteString + "%00"))
         let compiler = CommandLineOpenVAFCompiler(
             configuration: OpenVAFConfiguration(processEnvironment: ["PATH": sandbox.url.path]),
             executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
@@ -1208,10 +1208,10 @@ struct CommandLineOpenVAFCompilerTests {
 
         let targetSourceURL = sandbox.url.appendingPathComponent("target.va")
         let linkedSourceURL = sandbox.url.appendingPathComponent("linked.va")
-        let sourceURL = URL(string: sourceDirectory
+        let sourceURL = try #require(URL(string: sourceDirectory
             .appendingPathComponent("placeholder")
             .absoluteString
-            .replacingOccurrences(of: "placeholder", with: "%2e%2e/linked.va"))!
+            .replacingOccurrences(of: "placeholder", with: "%2e%2e/linked.va")))
         let outputDirectory = sandbox.url.appendingPathComponent("out")
         try "module linked; endmodule\n".write(to: targetSourceURL, atomically: true, encoding: .utf8)
         try FileManager.default.createSymbolicLink(at: linkedSourceURL, withDestinationURL: targetSourceURL)
@@ -2383,10 +2383,10 @@ module model; endmodule
 
         let targetSourceURL = sandbox.url.appendingPathComponent("target.va")
         let linkedSourceURL = sandbox.url.appendingPathComponent("linked.va")
-        let sourceURL = URL(string: sourceDirectory
+        let sourceURL = try #require(URL(string: sourceDirectory
             .appendingPathComponent("placeholder")
             .absoluteString
-            .replacingOccurrences(of: "placeholder", with: "%2e%2e/linked.va"))!
+            .replacingOccurrences(of: "placeholder", with: "%2e%2e/linked.va")))
         let outputDirectory = sandbox.url.appendingPathComponent("out")
         try "module linked; endmodule\n".write(to: targetSourceURL, atomically: true, encoding: .utf8)
         try FileManager.default.createSymbolicLink(at: linkedSourceURL, withDestinationURL: targetSourceURL)
@@ -3305,6 +3305,42 @@ module model; endmodule
         await #expect(throws: OpenVAFError.invalidConfiguration(
             field: "compilerArguments[0]",
             message: "Argument must not contain NUL"
+        )) {
+            try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
+    }
+
+    @Test("Compile rejects compiler arguments that redirect OSDI output before staging")
+    func compileRejectsOutputRedirectingCompilerArgumentsBeforeStaging() async throws {
+        let sandbox = try TemporaryDirectory(name: "output-redirect-compiler-argument")
+        defer { sandbox.remove() }
+
+        let sourceURL = sandbox.url.appendingPathComponent("model.va")
+        let outputDirectory = sandbox.url.appendingPathComponent("out")
+        try "module model; endmodule\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let compiler = CommandLineOpenVAFCompiler(
+            configuration: OpenVAFConfiguration(
+                processEnvironment: ["PATH": sandbox.url.path],
+                compilerArguments: ["--output=../escaped.osdi"]
+            ),
+            executableResolver: StaticExecutableResolver(url: sandbox.url.appendingPathComponent("openvaf")),
+            processRunner: RecordingProcessRunner { _ in
+                Issue.record("Runner should not be called when compiler arguments redirect output")
+                return OpenVAFProcessResult(
+                    exitCode: 0,
+                    standardOutput: "",
+                    standardError: "",
+                    startedAt: Date(),
+                    finishedAt: Date()
+                )
+            }
+        )
+
+        await #expect(throws: OpenVAFError.invalidConfiguration(
+            field: "compilerArguments[0]",
+            message: "Output path arguments must be supplied through OpenVAFCompilationRequest.outputFileName"
         )) {
             try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
         }

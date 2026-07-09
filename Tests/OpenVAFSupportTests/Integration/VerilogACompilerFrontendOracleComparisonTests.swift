@@ -10,7 +10,9 @@ struct VerilogACompilerFrontendOracleComparisonTests {
     private static let environment = ProcessInfo.processInfo.environment
     private static let executableLocation = locateExecutable(environment: environment)
     private static let executableURL = executableLocation.url
-    private static let isEnabled = executableURL != nil
+    private static let isExplicitlyRequested = environment["OPENVAF_ORACLE"] == "1"
+        || environment["OPENVAF_E2E"] == "1"
+    private static let isEnabled = isExplicitlyRequested
 
     @Test(
         "Parser results match sources accepted by OpenVAF",

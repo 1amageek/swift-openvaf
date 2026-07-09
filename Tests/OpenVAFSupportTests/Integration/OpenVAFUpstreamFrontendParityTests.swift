@@ -14,7 +14,9 @@ struct OpenVAFUpstreamFrontendParityTests {
     #if OpenVAFCLI
     private static let executableLocation = locateExecutable()
     private static let executableURL = executableLocation.url
-    private static let isOpenVAFOracleEnabled = upstreamRootURL != nil && executableURL != nil
+    private static let isOpenVAFOracleExplicitlyRequested = ProcessInfo.processInfo.environment["OPENVAF_ORACLE"] == "1"
+        || ProcessInfo.processInfo.environment["OPENVAF_E2E"] == "1"
+    private static let isOpenVAFOracleEnabled = upstreamRootURL != nil && isOpenVAFOracleExplicitlyRequested
     #endif
 
     @Test(

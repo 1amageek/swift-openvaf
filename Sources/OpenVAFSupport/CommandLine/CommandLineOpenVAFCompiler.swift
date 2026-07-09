@@ -372,7 +372,20 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                     message: "Argument must not contain NUL"
                 )
             }
+            guard !isOutputRedirectingCompilerArgument(argument) else {
+                throw .invalidConfiguration(
+                    field: "compilerArguments[\(index)]",
+                    message: "Output path arguments must be supplied through OpenVAFCompilationRequest.outputFileName"
+                )
+            }
         }
+    }
+
+    private func isOutputRedirectingCompilerArgument(_ argument: String) -> Bool {
+        argument == "-o"
+            || argument == "--output"
+            || argument.hasPrefix("-o=")
+            || argument.hasPrefix("--output=")
     }
 
     private func containsNUL(_ value: String) -> Bool {
@@ -1161,7 +1174,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         let recordedEnvironment = recordedEnvironment(from: environment)
         return OpenVAFEnvironmentRecord(
             source: configuration.processEnvironment == nil ? .inherited : .explicit,
-            keys: Array(recordedEnvironment.keys),
+            keys: Array(recordedEnvironment.keys).sorted(),
             valueSHA256: sha256HexDigest(of: recordedEnvironment)
         )
     }

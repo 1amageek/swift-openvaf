@@ -10,7 +10,7 @@ struct OpenVAFE2ETests {
     private static let executableLocation = locateExecutable(environment: environment)
     private static let executableURL = executableLocation.url
     private static let isExplicitlyRequested = environment["OPENVAF_E2E"] == "1"
-    private static let isEnabled = isExplicitlyRequested || executableURL != nil
+    private static let isEnabled = isExplicitlyRequested
 
     @Test(
         "Compiles a real Verilog-A fixture into OSDI",
