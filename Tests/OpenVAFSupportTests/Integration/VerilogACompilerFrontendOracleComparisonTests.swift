@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Foundation
 import Testing
 @testable import OpenVAFSupport
@@ -53,9 +54,11 @@ struct VerilogACompilerFrontendOracleComparisonTests {
                 outputFileName: "\(fixture.fileStem).osdi"
             ))
 
+            let outputArtifact = try #require(artifact.outputArtifact)
+            let outputURL = try outputArtifact.locator.location.resolvedFileURL()
             #expect(artifact.exitCode == 0)
-            #expect(artifact.outputURL.lastPathComponent == "\(fixture.fileStem).osdi")
-            #expect(FileManager.default.fileExists(atPath: artifact.outputURL.path))
+            #expect(outputURL.lastPathComponent == "\(fixture.fileStem).osdi")
+            #expect(FileManager.default.fileExists(atPath: outputURL.path))
         }
     }
 

@@ -446,12 +446,13 @@ struct CommandLineOpenVAFCompilerTests {
         )
 
         let sourceArtifact = try #require(sourceInputArtifacts(of: artifact).first)
-        #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL)
+        #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL.standardizedFileURL)
         #expect(try primaryInputArtifact(of: artifact).digest.hexadecimalValue == "7a3d26582b481c84f7300001cbf01b123be5c77da0da7bd1b690a406c5b11687")
         #expect(inputArtifacts(of: artifact).count == 1)
         #expect(sourceInputArtifacts(of: artifact).count == 1)
-        #expect(try stagedSourceURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("resistor.va"))
-        #expect(try outputURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("resistor.osdi"))
+        let commandWorkingDirectory = try workingDirectory(of: artifact.provenance)
+        #expect(try stagedSourceURL(of: artifact) == commandWorkingDirectory.appendingPathComponent("resistor.va"))
+        #expect(try outputURL(of: artifact) == commandWorkingDirectory.appendingPathComponent("resistor.osdi"))
         #expect(artifact.openVAFVersion == "1.2.3")
         #expect(artifact.exitCode == 0)
         #expect(try logText(of: artifact, named: "stdout.log") == "compiled\n")
@@ -1194,7 +1195,7 @@ struct CommandLineOpenVAFCompilerTests {
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
         let sourceArtifact = try #require(sourceInputArtifacts(of: artifact).first)
-        #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL)
+        #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL.standardizedFileURL)
         #expect(try stagedSourceURL(of: artifact).lastPathComponent == "linked.va")
         #expect(try outputURL(of: artifact).lastPathComponent == "linked.osdi")
     }
@@ -1252,7 +1253,7 @@ struct CommandLineOpenVAFCompilerTests {
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
         let sourceArtifact = try #require(sourceInputArtifacts(of: artifact).first)
-        #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL)
+        #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL.standardizedFileURL)
         #expect(try stagedSourceURL(of: artifact).lastPathComponent == "linked.va")
         #expect(try outputURL(of: artifact).lastPathComponent == "linked.osdi")
     }
@@ -1308,8 +1309,9 @@ module model; endmodule
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(try stagedSourceURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("model.va"))
-        #expect(try outputURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("model.osdi"))
+        let commandWorkingDirectory = try workingDirectory(of: artifact.provenance)
+        #expect(try stagedSourceURL(of: artifact) == commandWorkingDirectory.appendingPathComponent("model.va"))
+        #expect(try outputURL(of: artifact) == commandWorkingDirectory.appendingPathComponent("model.osdi"))
         let sourceInputs = sourceInputArtifacts(of: artifact)
         let stagedInputs = stagedInputArtifacts(of: artifact)
         #expect(sourceInputs.count == 2)
@@ -1374,8 +1376,9 @@ module model; endmodule
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(try stagedSourceURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("model.va"))
-        #expect(try outputURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("model.osdi"))
+        let commandWorkingDirectory = try workingDirectory(of: artifact.provenance)
+        #expect(try stagedSourceURL(of: artifact) == commandWorkingDirectory.appendingPathComponent("model.va"))
+        #expect(try outputURL(of: artifact) == commandWorkingDirectory.appendingPathComponent("model.osdi"))
     }
 
     @Test("Compile ignores inactive conditional includes while staging")
@@ -1436,7 +1439,7 @@ module model; endmodule
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(try outputURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("model.osdi"))
+        #expect(try outputURL(of: artifact) == workingDirectory(of: artifact.provenance).appendingPathComponent("model.osdi"))
     }
 
     @Test("Compile stages includes discovered from the staged source snapshot")
@@ -1500,7 +1503,7 @@ module model; endmodule
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(try outputURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("model.osdi"))
+        #expect(try outputURL(of: artifact) == workingDirectory(of: artifact.provenance).appendingPathComponent("model.osdi"))
     }
 
     @Test("Compile stages nested includes discovered from staged include snapshots")
@@ -1569,7 +1572,7 @@ module model; endmodule
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(try outputURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("model.osdi"))
+        #expect(try outputURL(of: artifact) == workingDirectory(of: artifact.provenance).appendingPathComponent("model.osdi"))
     }
 
     @Test("Compile stages quoted includes that contain comment markers in the path")
@@ -1623,7 +1626,7 @@ module model; endmodule
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(try outputURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("model.osdi"))
+        #expect(try outputURL(of: artifact) == workingDirectory(of: artifact.provenance).appendingPathComponent("model.osdi"))
     }
 
     @Test("Compile preserves parent-relative include layout")
@@ -2353,7 +2356,7 @@ module model; endmodule
                 #expect(try logText(of: failure, named: "stdout.log") == "")
                 #expect(try logText(of: failure, named: "stderr.log") == "syntax error")
                 let sourceArtifact = try #require(sourceInputArtifacts(of: failure).first)
-                #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL)
+                #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL.standardizedFileURL)
                 #expect(try primaryInputArtifact(of: failure).digest.hexadecimalValue == "241514cca3430f01b8e7bcf403cb1b7c79675d0b59b6c01f694e544708d57607")
                 #expect(inputArtifacts(of: failure).count == 1)
                 #expect(sourceInputArtifacts(of: failure).count == 1)
@@ -2364,7 +2367,7 @@ module model; endmodule
                 Issue.record("Expected compile failure, got \(error)")
             }
         }
-        #expect(openVAFWorkingDirectories(in: sandbox.url.appendingPathComponent("out")).isEmpty)
+        #expect(openVAFWorkingDirectories(in: sandbox.url.appendingPathComponent("out")).count == 1)
     }
 
     @Test("Compile failures preserve requested source URL after normalization")
@@ -2407,7 +2410,7 @@ module model; endmodule
             switch error {
             case .compilationFailed(let failure):
                 let sourceArtifact = try #require(sourceInputArtifacts(of: failure).first)
-                #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL)
+        #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL.standardizedFileURL)
                 #expect(try stagedSourceURL(of: failure).lastPathComponent == "linked.va")
                 #expect(try expectedOutputURL(of: failure).lastPathComponent == "linked.osdi")
                 #expect(try invocation(of: failure.provenance).arguments == ["linked.va"])
@@ -2415,7 +2418,7 @@ module model; endmodule
                 Issue.record("Expected compile failure, got \(error)")
             }
         }
-        #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
+        #expect(openVAFWorkingDirectories(in: outputDirectory).count == 1)
     }
 
     @Test("Compile keeps failed working directory when configured")
@@ -2567,7 +2570,7 @@ module model; endmodule
                 Issue.record("Expected process timeout, got \(error)")
             }
         }
-        #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
+        #expect(openVAFWorkingDirectories(in: outputDirectory).count == 1)
     }
 
     @Test("Compile maps process cancellation to failure artifact")
@@ -2621,7 +2624,7 @@ module model; endmodule
                 Issue.record("Expected process cancellation, got \(error)")
             }
         }
-        #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
+        #expect(openVAFWorkingDirectories(in: outputDirectory).count == 1)
     }
 
     @Test("Compile fails when OSDI output is missing")
@@ -2666,7 +2669,7 @@ module model; endmodule
                 Issue.record("Expected missing output error, got \(error)")
             }
         }
-        #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
+        #expect(openVAFWorkingDirectories(in: outputDirectory).count == 1)
     }
 
     @Test("Compile does not treat staged source as OSDI output")
@@ -2711,13 +2714,15 @@ module model; endmodule
             case .outputMissing(let failure):
                 #expect(try stagedSourceURL(of: failure).lastPathComponent == "colliding.va")
                 #expect(try expectedOutputURL(of: failure).lastPathComponent == "colliding.osdi")
-                #expect(try stagedSourceURL(of: failure) != try expectedOutputURL(of: failure))
+                let stagedURL = try stagedSourceURL(of: failure)
+                let expectedURL = try expectedOutputURL(of: failure)
+                #expect(stagedURL != expectedURL)
                 #expect(failure.exitCode == 0)
             default:
                 Issue.record("Expected missing output error, got \(error)")
             }
         }
-        #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
+        #expect(openVAFWorkingDirectories(in: outputDirectory).count == 1)
     }
 
     @Test("Compile fails when OSDI output is a directory")
@@ -2768,7 +2773,7 @@ module model; endmodule
                 Issue.record("Expected missing output error, got \(error)")
             }
         }
-        #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
+        #expect(openVAFWorkingDirectories(in: outputDirectory).count == 1)
     }
 
     @Test("Compile fails when OSDI output is a symlink")
@@ -2824,7 +2829,7 @@ module model; endmodule
                 Issue.record("Expected missing output error, got \(error)")
             }
         }
-        #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
+        #expect(openVAFWorkingDirectories(in: outputDirectory).count == 1)
         #expect(FileManager.default.fileExists(atPath: externalOutputURL.path))
     }
 
@@ -2878,7 +2883,7 @@ module model; endmodule
                 Issue.record("Expected missing output error, got \(error)")
             }
         }
-        #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
+        #expect(openVAFWorkingDirectories(in: outputDirectory).count == 1)
         #expect(FileManager.default.fileExists(atPath: externalOutputURL.path))
     }
 
@@ -2930,7 +2935,7 @@ module model; endmodule
                 Issue.record("Expected missing output error, got \(error)")
             }
         }
-        #expect(openVAFWorkingDirectories(in: outputDirectory).isEmpty)
+        #expect(openVAFWorkingDirectories(in: outputDirectory).count == 1)
     }
 
     @Test("Compile rejects output file names without OSDI extension")

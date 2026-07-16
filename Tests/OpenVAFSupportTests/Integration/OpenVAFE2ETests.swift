@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Foundation
 import Testing
 @testable import OpenVAFSupport
@@ -44,15 +45,21 @@ struct OpenVAFE2ETests {
             outputFileName: "wrapped-resistor.osdi"
         ))
 
-        #expect(artifact.command.executableURL.path == executableURL.path)
-        #expect(artifact.command.arguments.last == "wrapped-resistor.va")
-        #expect(artifact.stagedSourceURL.lastPathComponent == "wrapped-resistor.va")
-        #expect(artifact.outputURL.lastPathComponent == "wrapped-resistor.osdi")
-        #expect(artifact.sourceSHA256.count == 64)
-        #expect(artifact.exitCode == 0)
-        #expect(FileManager.default.fileExists(atPath: artifact.outputURL.path))
+        let invocation = try #require(artifact.provenance.invocation)
+        let stagedSourceArtifact = try #require(artifact.provenance.inputs.first)
+        let stagedSourceURL = try stagedSourceArtifact.locator.location.resolvedFileURL()
+        let outputArtifact = try #require(artifact.outputArtifact)
+        let outputURL = try outputArtifact.locator.location.resolvedFileURL()
 
-        let attributes = try FileManager.default.attributesOfItem(atPath: artifact.outputURL.path)
+        #expect(invocation.executable == executableURL.path)
+        #expect(invocation.arguments.last == "wrapped-resistor.va")
+        #expect(stagedSourceURL.lastPathComponent == "wrapped-resistor.va")
+        #expect(outputURL.lastPathComponent == "wrapped-resistor.osdi")
+        #expect(stagedSourceArtifact.digest.hexadecimalValue.count == 64)
+        #expect(artifact.exitCode == 0)
+        #expect(FileManager.default.fileExists(atPath: outputURL.path))
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: outputURL.path)
         let fileSize = try #require(attributes[FileAttributeKey.size] as? NSNumber)
         #expect(fileSize.intValue > 0)
     }

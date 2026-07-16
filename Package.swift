@@ -65,6 +65,7 @@ let package = Package(
             dependencies: [
                 "OpenVAFSupport",
                 "VerilogACompiler",
+                .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
             ]
         ),
     ],
