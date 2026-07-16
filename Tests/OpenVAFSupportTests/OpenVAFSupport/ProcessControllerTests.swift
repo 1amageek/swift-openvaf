@@ -62,7 +62,7 @@ struct ProcessControllerTests {
         let controller = ProcessController(process: process)
 
         try await controller.run()
-        process.waitUntilExit()
+        try await waitUntilProcessStops(process)
 
         let didRequestTermination = await controller.terminateIfRunningOrPendingStart()
 
@@ -76,7 +76,7 @@ struct ProcessControllerTests {
         let controller = ProcessController(process: process)
 
         try await controller.run()
-        process.waitUntilExit()
+        try await waitUntilProcessStops(process)
 
         let didRequestForceKill = await controller.forceKillIfRunningOrPendingStart()
 
@@ -89,11 +89,23 @@ struct ProcessControllerTests {
         while process.isRunning && clock.now < deadline {
             try await clock.sleep(for: .milliseconds(10))
         }
-        if process.isRunning {
-            kill(process.processIdentifier, SIGKILL)
-            Issue.record("Process did not stop after pending termination request")
+        guard process.isRunning else { return }
+
+        Issue.record("Process did not stop within the expected termination window")
+        let processIdentifier = process.processIdentifier
+        let killResult = kill(processIdentifier, SIGKILL)
+        if killResult != 0 && errno != ESRCH {
+            Issue.record("Failed to kill test process: errno \(errno)")
+            return
         }
-        process.waitUntilExit()
+
+        let forceKillDeadline = clock.now.advanced(by: .seconds(1))
+        while process.isRunning && clock.now < forceKillDeadline {
+            try await clock.sleep(for: .milliseconds(10))
+        }
+        if process.isRunning {
+            Issue.record("Process remained running after SIGKILL")
+        }
     }
 }
 
