@@ -11,7 +11,7 @@ extension CommandLineOpenVAFCompiler: VerilogAOSDICompiling {
     public func compileOSDI(
         sourceAt sourceURL: URL,
         to outputDirectory: URL
-    ) async throws -> OpenVAFCompilationArtifact {
+    ) async throws -> OpenVAFCompilationResult {
         try await compile(OpenVAFCompilationRequest(
             sourceURL: sourceURL,
             outputDirectory: outputDirectory

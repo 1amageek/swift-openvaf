@@ -1,26 +1,32 @@
 import CircuiteFoundation
 import Foundation
 
-/// Canonical evidence retained when an OpenVAF compilation does not complete.
-public struct OpenVAFCompilationFailure: ArtifactProducing, DiagnosticReporting, Sendable, Hashable, Codable {
+/// Canonical evidence produced by a successful OpenVAF compilation.
+public struct OpenVAFCompilationResult: ArtifactProducing, DiagnosticReporting, Sendable, Hashable, Codable {
     public let artifacts: [ArtifactReference]
     public let diagnostics: [DesignDiagnostic]
     public let provenance: ExecutionProvenance
     public let openVAFVersion: String?
-    public let exitCode: Int32?
+    public let exitCode: Int32
 
     public init(
         artifacts: [ArtifactReference],
         diagnostics: [DesignDiagnostic],
         provenance: ExecutionProvenance,
         openVAFVersion: String?,
-        exitCode: Int32?
+        exitCode: Int32
     ) {
         self.artifacts = artifacts
         self.diagnostics = diagnostics
         self.provenance = provenance
         self.openVAFVersion = openVAFVersion
         self.exitCode = exitCode
+    }
+
+    public var outputArtifact: ArtifactReference? {
+        artifacts.first {
+            $0.locator.role == .output && $0.locator.kind == .model
+        }
     }
 
     public var logArtifacts: [ArtifactReference] {

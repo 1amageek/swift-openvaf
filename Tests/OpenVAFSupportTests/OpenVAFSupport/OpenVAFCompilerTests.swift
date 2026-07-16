@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Foundation
 import Darwin
 import Testing
@@ -444,27 +445,20 @@ struct CommandLineOpenVAFCompilerTests {
             to: outputDirectory
         )
 
-        #expect(artifact.sourceURL == sourceURL)
-        #expect(artifact.sourceSHA256 == "7a3d26582b481c84f7300001cbf01b123be5c77da0da7bd1b690a406c5b11687")
-        #expect(artifact.inputFiles.count == 1)
-        if let inputFile = artifact.inputFiles.first {
-            #expect(inputFile.role == .primarySource)
-            #expect(inputFile.logicalPath == "resistor.va")
-            #expect(inputFile.sourceURL == sourceURL)
-            #expect(inputFile.stagedRelativePath == "resistor.va")
-            #expect(inputFile.stagedURL == artifact.stagedSourceURL)
-            #expect(inputFile.sha256 == artifact.sourceSHA256)
-        }
-        #expect(artifact.stagedSourceURL == artifact.command.workingDirectory.appendingPathComponent("resistor.va"))
-        #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("resistor.osdi"))
+        let sourceArtifact = try #require(sourceInputArtifacts(of: artifact).first)
+        #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL)
+        #expect(try primaryInputArtifact(of: artifact).digest.hexadecimalValue == "7a3d26582b481c84f7300001cbf01b123be5c77da0da7bd1b690a406c5b11687")
+        #expect(inputArtifacts(of: artifact).count == 1)
+        #expect(sourceInputArtifacts(of: artifact).count == 1)
+        #expect(try stagedSourceURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("resistor.va"))
+        #expect(try outputURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("resistor.osdi"))
         #expect(artifact.openVAFVersion == "1.2.3")
         #expect(artifact.exitCode == 0)
-        #expect(artifact.standardOutput == "compiled\n")
-        #expect(artifact.command.environmentKeys == ["PATH"])
-        #expect(artifact.command.environment.source == .explicit)
-        #expect(isSHA256Hex(artifact.command.environment.valueSHA256))
-        #expect(FileManager.default.fileExists(atPath: artifact.stagedSourceURL.path))
-        #expect(FileManager.default.fileExists(atPath: artifact.outputURL.path))
+        #expect(try logText(of: artifact, named: "stdout.log") == "compiled\n")
+        let environment = try #require(artifact.provenance.environment)
+        #expect(isSHA256Hex(try #require(environment.environmentDigest).hexadecimalValue))
+        #expect(FileManager.default.fileExists(atPath: try stagedSourceURL(of: artifact).path))
+        #expect(FileManager.default.fileExists(atPath: try outputURL(of: artifact).path))
     }
 
     @Test("Compile runs through Verilog-A OSDI protocol")
@@ -510,8 +504,8 @@ struct CommandLineOpenVAFCompilerTests {
         )
 
         #expect(compiler.implementation == .openVAF)
-        #expect(artifact.outputURL.lastPathComponent == "resistor.osdi")
-        #expect(FileManager.default.fileExists(atPath: artifact.outputURL.path))
+        #expect(try outputURL(of: artifact).lastPathComponent == "resistor.osdi")
+        #expect(FileManager.default.fileExists(atPath: try outputURL(of: artifact).path))
     }
 
     @Test("Compile rejects non-file source URLs before launching")
@@ -993,8 +987,8 @@ struct CommandLineOpenVAFCompilerTests {
         #expect(!FileManager.default.fileExists(atPath: outputDirectory.path))
     }
 
-    @Test("Compile fingerprints explicit environment without delimiter collisions")
-    func compileFingerprintsExplicitEnvironmentWithoutDelimiterCollisions() async throws {
+    @Test("Compile fingerprints only allowlisted environment values")
+    func compileFingerprintsOnlyAllowlistedEnvironmentValues() async throws {
         let sandbox = try TemporaryDirectory(name: "environment-fingerprint")
         defer { sandbox.remove() }
 
@@ -1025,7 +1019,7 @@ struct CommandLineOpenVAFCompilerTests {
             )
         }
 
-        func compile(environment: [String: String]) async throws -> OpenVAFCompilationArtifact {
+        func compile(environment: [String: String]) async throws -> OpenVAFCompilationResult {
             let compiler = CommandLineOpenVAFCompiler(
                 configuration: OpenVAFConfiguration(processEnvironment: environment),
                 executableResolver: StaticExecutableResolver(url: executableURL),
@@ -1043,10 +1037,16 @@ struct CommandLineOpenVAFCompilerTests {
             "C": "D",
             "PATH": sandbox.url.path,
         ])
+        let changedPath = try await compile(environment: [
+            "A": "B\nC=D",
+            "PATH": sandbox.url.appendingPathComponent("other-bin").path,
+        ])
 
-        #expect(first.command.environment.keys == ["A", "PATH"])
-        #expect(second.command.environment.keys == ["A", "C", "PATH"])
-        #expect(first.command.environment.valueSHA256 != second.command.environment.valueSHA256)
+        let firstDigest = try #require(first.provenance.environment?.environmentDigest)
+        let secondDigest = try #require(second.provenance.environment?.environmentDigest)
+        let changedPathDigest = try #require(changedPath.provenance.environment?.environmentDigest)
+        #expect(firstDigest == secondDigest)
+        #expect(firstDigest != changedPathDigest)
     }
 
     @Test("Compile records only relevant inherited environment metadata")
@@ -1087,14 +1087,14 @@ struct CommandLineOpenVAFCompilerTests {
         )
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
-        let allowedKeys = Set(["OPENVAF_BIN", "PATH", "DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"])
+        let environment = try #require(artifact.provenance.environment)
+        let digest = try #require(environment.environmentDigest)
 
-        #expect(artifact.command.environment.source == .inherited)
-        #expect(Set(artifact.command.environment.keys).isSubset(of: allowedKeys))
-        #expect(artifact.command.environment.keys == artifact.command.environment.keys.sorted())
-        #expect(!artifact.command.environment.keys.contains("HOME"))
-        #expect(!artifact.command.environment.keys.contains("GITHUB_TOKEN"))
-        #expect(isSHA256Hex(artifact.command.environment.valueSHA256))
+        #expect(isSHA256Hex(digest.hexadecimalValue))
+        let encoded = try JSONEncoder().encode(environment)
+        let encodedText = String(decoding: encoded, as: UTF8.self)
+        #expect(!encodedText.contains("HOME"))
+        #expect(!encodedText.contains("GITHUB_TOKEN"))
     }
 
     @Test("Compile honors custom OSDI output file name")
@@ -1141,9 +1141,9 @@ struct CommandLineOpenVAFCompilerTests {
             outputFileName: "custom.osdi"
         ))
 
-        #expect(artifact.stagedSourceURL.lastPathComponent == "custom.va")
-        #expect(artifact.outputURL.lastPathComponent == "custom.osdi")
-        #expect(FileManager.default.fileExists(atPath: artifact.outputURL.path))
+        #expect(try stagedSourceURL(of: artifact).lastPathComponent == "custom.va")
+        #expect(try outputURL(of: artifact).lastPathComponent == "custom.osdi")
+        #expect(FileManager.default.fileExists(atPath: try outputURL(of: artifact).path))
     }
 
     @Test("Compile stages symlink source contents")
@@ -1193,9 +1193,10 @@ struct CommandLineOpenVAFCompilerTests {
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(artifact.sourceURL == sourceURL)
-        #expect(artifact.stagedSourceURL.lastPathComponent == "linked.va")
-        #expect(artifact.outputURL.lastPathComponent == "linked.osdi")
+        let sourceArtifact = try #require(sourceInputArtifacts(of: artifact).first)
+        #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL)
+        #expect(try stagedSourceURL(of: artifact).lastPathComponent == "linked.va")
+        #expect(try outputURL(of: artifact).lastPathComponent == "linked.osdi")
     }
 
     @Test("Compile normalizes encoded parent markers without resolving symlink source names")
@@ -1250,9 +1251,10 @@ struct CommandLineOpenVAFCompilerTests {
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(artifact.sourceURL == sourceURL)
-        #expect(artifact.stagedSourceURL.lastPathComponent == "linked.va")
-        #expect(artifact.outputURL.lastPathComponent == "linked.osdi")
+        let sourceArtifact = try #require(sourceInputArtifacts(of: artifact).first)
+        #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL)
+        #expect(try stagedSourceURL(of: artifact).lastPathComponent == "linked.va")
+        #expect(try outputURL(of: artifact).lastPathComponent == "linked.osdi")
     }
 
     @Test("Compile stages local include files beside the source")
@@ -1306,23 +1308,21 @@ module model; endmodule
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(artifact.stagedSourceURL == artifact.command.workingDirectory.appendingPathComponent("model.va"))
-        #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("model.osdi"))
-        #expect(artifact.inputFiles.map(\.role) == [.primarySource, .include])
-
-        let primaryInput = try #require(artifact.inputFiles.first)
-        #expect(primaryInput.logicalPath == "model.va")
-        #expect(primaryInput.sourceURL == sourceURL)
-        #expect(primaryInput.stagedRelativePath == "model.va")
-        #expect(primaryInput.stagedURL == artifact.stagedSourceURL)
-        #expect(primaryInput.sha256 == artifact.sourceSHA256)
-
-        let includeInput = try #require(artifact.inputFiles.dropFirst().first)
-        #expect(includeInput.logicalPath == "params.inc")
-        #expect(includeInput.sourceURL == includeURL.standardized)
-        #expect(includeInput.stagedRelativePath == "params.inc")
-        #expect(includeInput.stagedURL == artifact.command.workingDirectory.appendingPathComponent("params.inc"))
-        #expect(includeInput.sha256 == "c40920d60a3a1af7ffbcacc7ec5bd8e0ed36c987b7c51ca579869d2acad5d7aa")
+        #expect(try stagedSourceURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("model.va"))
+        #expect(try outputURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("model.osdi"))
+        let sourceInputs = sourceInputArtifacts(of: artifact)
+        let stagedInputs = stagedInputArtifacts(of: artifact)
+        #expect(sourceInputs.count == 2)
+        #expect(stagedInputs.count == 2)
+        #expect(try sourceInputs.map { try $0.locator.location.resolvedFileURL() } == [
+            sourceURL,
+            includeURL.standardized,
+        ])
+        #expect(try stagedInputs.map { try $0.locator.location.resolvedFileURL() } == [
+            try workingDirectory(of: artifact.provenance).appendingPathComponent("model.va"),
+            try workingDirectory(of: artifact.provenance).appendingPathComponent("params.inc"),
+        ])
+        #expect(stagedInputs[1].digest.hexadecimalValue == "c40920d60a3a1af7ffbcacc7ec5bd8e0ed36c987b7c51ca579869d2acad5d7aa")
     }
 
     @Test("Compile stages first include when source starts with UTF-8 byte order mark")
@@ -1374,8 +1374,8 @@ module model; endmodule
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(artifact.stagedSourceURL == artifact.command.workingDirectory.appendingPathComponent("model.va"))
-        #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("model.osdi"))
+        #expect(try stagedSourceURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("model.va"))
+        #expect(try outputURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("model.osdi"))
     }
 
     @Test("Compile ignores inactive conditional includes while staging")
@@ -1436,7 +1436,7 @@ module model; endmodule
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("model.osdi"))
+        #expect(try outputURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("model.osdi"))
     }
 
     @Test("Compile stages includes discovered from the staged source snapshot")
@@ -1500,7 +1500,7 @@ module model; endmodule
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("model.osdi"))
+        #expect(try outputURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("model.osdi"))
     }
 
     @Test("Compile stages nested includes discovered from staged include snapshots")
@@ -1569,7 +1569,7 @@ module model; endmodule
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("model.osdi"))
+        #expect(try outputURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("model.osdi"))
     }
 
     @Test("Compile stages quoted includes that contain comment markers in the path")
@@ -1623,7 +1623,7 @@ module model; endmodule
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(artifact.outputURL == artifact.command.workingDirectory.appendingPathComponent("model.osdi"))
+        #expect(try outputURL(of: artifact) == try workingDirectory(of: artifact.provenance).appendingPathComponent("model.osdi"))
     }
 
     @Test("Compile preserves parent-relative include layout")
@@ -1687,9 +1687,9 @@ module model; endmodule
             includeRootDirectory: projectDirectory
         ))
 
-        #expect(artifact.stagedSourceURL.lastPathComponent == "renamed.va")
-        #expect(artifact.stagedSourceURL.deletingLastPathComponent().lastPathComponent == "models")
-        #expect(artifact.outputURL.lastPathComponent == "renamed.osdi")
+        #expect(try stagedSourceURL(of: artifact).lastPathComponent == "renamed.va")
+        #expect(try stagedSourceURL(of: artifact).deletingLastPathComponent().lastPathComponent == "models")
+        #expect(try outputURL(of: artifact).lastPathComponent == "renamed.osdi")
     }
 
     @Test("Compile accepts a symlink include root when source uses the resolved project path")
@@ -1757,8 +1757,8 @@ module model; endmodule
             includeRootDirectory: linkedProjectDirectory
         ))
 
-        #expect(artifact.stagedSourceURL.deletingLastPathComponent().lastPathComponent == "models")
-        #expect(artifact.outputURL.lastPathComponent == "model.osdi")
+        #expect(try stagedSourceURL(of: artifact).deletingLastPathComponent().lastPathComponent == "models")
+        #expect(try outputURL(of: artifact).lastPathComponent == "model.osdi")
     }
 
     @Test("Compile rejects local include files outside the include root")
@@ -1910,8 +1910,8 @@ module model; endmodule
             includeRootDirectory: projectDirectory
         ))
 
-        #expect(artifact.stagedSourceURL.deletingLastPathComponent().lastPathComponent == "models")
-        #expect(artifact.outputURL.lastPathComponent == "model.osdi")
+        #expect(try stagedSourceURL(of: artifact).deletingLastPathComponent().lastPathComponent == "models")
+        #expect(try outputURL(of: artifact).lastPathComponent == "model.osdi")
     }
 
     @Test("Compile scans resolved include files once through symlink cycles")
@@ -1963,7 +1963,7 @@ module model; endmodule
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
         let commands = await runner.recordedCommands()
 
-        #expect(artifact.outputURL.lastPathComponent == "model.osdi")
+        #expect(try outputURL(of: artifact).lastPathComponent == "model.osdi")
         #expect(commands.filter { $0.arguments == ["model.va"] }.count == 1)
     }
 
@@ -2028,7 +2028,7 @@ module model; endmodule
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(artifact.outputURL.lastPathComponent == "top.osdi")
+        #expect(try outputURL(of: artifact).lastPathComponent == "top.osdi")
     }
 
     @Test("Compile rejects local include symlinks that resolve outside the include root")
@@ -2279,8 +2279,8 @@ module model; endmodule
 
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
-        #expect(artifact.sourceSHA256 == "b44ffb72fcc259676bd80495fef1b44b808ca8f1ffe1b1706a4d7911b0e31f11")
-        #expect(FileManager.default.fileExists(atPath: artifact.outputURL.path))
+        #expect(try primaryInputArtifact(of: artifact).digest.hexadecimalValue == "b44ffb72fcc259676bd80495fef1b44b808ca8f1ffe1b1706a4d7911b0e31f11")
+        #expect(FileManager.default.fileExists(atPath: try outputURL(of: artifact).path))
     }
 
     @Test("Compile rejects non-regular source files")
@@ -2350,22 +2350,16 @@ module model; endmodule
             switch error {
             case .compilationFailed(let failure):
                 #expect(failure.exitCode == 2)
-                #expect(failure.standardOutput == "")
-                #expect(failure.standardError == "syntax error")
-                #expect(failure.sourceURL == sourceURL)
-                #expect(failure.sourceSHA256 == "241514cca3430f01b8e7bcf403cb1b7c79675d0b59b6c01f694e544708d57607")
-                #expect(failure.inputFiles.count == 1)
-                if let inputFile = failure.inputFiles.first {
-                    #expect(inputFile.role == .primarySource)
-                    #expect(inputFile.logicalPath == "bad.va")
-                    #expect(inputFile.sourceURL == sourceURL)
-                    #expect(inputFile.stagedRelativePath == "bad.va")
-                    #expect(inputFile.stagedURL == failure.stagedSourceURL)
-                    #expect(inputFile.sha256 == failure.sourceSHA256)
-                }
-                #expect(failure.stagedSourceURL.lastPathComponent == "bad.va")
-                #expect(failure.outputURL.lastPathComponent == "bad.osdi")
-                #expect(failure.command.arguments == ["bad.va"])
+                #expect(try logText(of: failure, named: "stdout.log") == "")
+                #expect(try logText(of: failure, named: "stderr.log") == "syntax error")
+                let sourceArtifact = try #require(sourceInputArtifacts(of: failure).first)
+                #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL)
+                #expect(try primaryInputArtifact(of: failure).digest.hexadecimalValue == "241514cca3430f01b8e7bcf403cb1b7c79675d0b59b6c01f694e544708d57607")
+                #expect(inputArtifacts(of: failure).count == 1)
+                #expect(sourceInputArtifacts(of: failure).count == 1)
+                #expect(try stagedSourceURL(of: failure).lastPathComponent == "bad.va")
+                #expect(try expectedOutputURL(of: failure).lastPathComponent == "bad.osdi")
+                #expect(try invocation(of: failure.provenance).arguments == ["bad.va"])
             default:
                 Issue.record("Expected compile failure, got \(error)")
             }
@@ -2412,10 +2406,11 @@ module model; endmodule
         } catch let error {
             switch error {
             case .compilationFailed(let failure):
-                #expect(failure.sourceURL == sourceURL)
-                #expect(failure.stagedSourceURL.lastPathComponent == "linked.va")
-                #expect(failure.outputURL.lastPathComponent == "linked.osdi")
-                #expect(failure.command.arguments == ["linked.va"])
+                let sourceArtifact = try #require(sourceInputArtifacts(of: failure).first)
+                #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL)
+                #expect(try stagedSourceURL(of: failure).lastPathComponent == "linked.va")
+                #expect(try expectedOutputURL(of: failure).lastPathComponent == "linked.osdi")
+                #expect(try invocation(of: failure.provenance).arguments == ["linked.va"])
             default:
                 Issue.record("Expected compile failure, got \(error)")
             }
@@ -2456,8 +2451,8 @@ module model; endmodule
         } catch let error {
             switch error {
             case .compilationFailed(let failure):
-                #expect(FileManager.default.fileExists(atPath: failure.command.workingDirectory.path))
-                #expect(FileManager.default.fileExists(atPath: failure.stagedSourceURL.path))
+                #expect(FileManager.default.fileExists(atPath: try workingDirectory(of: failure.provenance).path))
+                #expect(FileManager.default.fileExists(atPath: try stagedSourceURL(of: failure).path))
             default:
                 Issue.record("Expected compilation failure, got \(error)")
             }
@@ -2510,8 +2505,8 @@ module model; endmodule
         } catch let error {
             switch error {
             case .compilationFailed(let failure):
-                #expect(failure.standardError == "syntax error")
-                #expect(failure.command.workingDirectory.path.hasPrefix(outputDirectory.path))
+                #expect(try logText(of: failure, named: "stderr.log") == "syntax error")
+                #expect(try workingDirectory(of: failure.provenance).path.hasPrefix(outputDirectory.path))
             default:
                 Issue.record("Expected compilation failure, got \(error)")
             }
@@ -2563,11 +2558,11 @@ module model; endmodule
             switch error {
             case .compilationTimedOut(let failure, let timeout):
                 #expect(timeout == .milliseconds(50))
-                #expect(failure.command.arguments == ["timeout.va"])
-                #expect(failure.standardOutput == "partial")
-                #expect(failure.standardError == "still running")
-                #expect(failure.startedAt == startedAt)
-                #expect(failure.finishedAt == finishedAt)
+                #expect(try invocation(of: failure.provenance).arguments == ["timeout.va"])
+                #expect(try logText(of: failure, named: "stdout.log") == "partial")
+                #expect(try logText(of: failure, named: "stderr.log") == "still running")
+                #expect(failure.provenance.startedAt == startedAt)
+                #expect(failure.provenance.completedAt == finishedAt)
             default:
                 Issue.record("Expected process timeout, got \(error)")
             }
@@ -2617,11 +2612,11 @@ module model; endmodule
         } catch let error {
             switch error {
             case .compilationCancelled(let failure):
-                #expect(failure.command.arguments == ["cancelled.va"])
-                #expect(failure.standardOutput == "partial")
-                #expect(failure.standardError == "cancelled")
-                #expect(failure.startedAt == startedAt)
-                #expect(failure.finishedAt == finishedAt)
+                #expect(try invocation(of: failure.provenance).arguments == ["cancelled.va"])
+                #expect(try logText(of: failure, named: "stdout.log") == "partial")
+                #expect(try logText(of: failure, named: "stderr.log") == "cancelled")
+                #expect(failure.provenance.startedAt == startedAt)
+                #expect(failure.provenance.completedAt == finishedAt)
             default:
                 Issue.record("Expected process cancellation, got \(error)")
             }
@@ -2662,10 +2657,10 @@ module model; endmodule
         } catch let error {
             switch error {
             case .outputMissing(let failure):
-                #expect(failure.outputURL.lastPathComponent == "missing.osdi")
-                #expect(failure.outputURL.deletingLastPathComponent().path.hasPrefix(outputDirectory.path))
-                #expect(failure.standardOutput == "ok")
-                #expect(failure.standardError == "")
+                #expect(try expectedOutputURL(of: failure).lastPathComponent == "missing.osdi")
+                #expect(try expectedOutputURL(of: failure).deletingLastPathComponent().path.hasPrefix(outputDirectory.path))
+                #expect(try logText(of: failure, named: "stdout.log") == "ok")
+                #expect(try logText(of: failure, named: "stderr.log") == "")
                 #expect(failure.exitCode == 0)
             default:
                 Issue.record("Expected missing output error, got \(error)")
@@ -2714,9 +2709,9 @@ module model; endmodule
         } catch let error {
             switch error {
             case .outputMissing(let failure):
-                #expect(failure.stagedSourceURL.lastPathComponent == "colliding.va")
-                #expect(failure.outputURL.lastPathComponent == "colliding.osdi")
-                #expect(failure.stagedSourceURL != failure.outputURL)
+                #expect(try stagedSourceURL(of: failure).lastPathComponent == "colliding.va")
+                #expect(try expectedOutputURL(of: failure).lastPathComponent == "colliding.osdi")
+                #expect(try stagedSourceURL(of: failure) != try expectedOutputURL(of: failure))
                 #expect(failure.exitCode == 0)
             default:
                 Issue.record("Expected missing output error, got \(error)")
@@ -2767,7 +2762,7 @@ module model; endmodule
         } catch let error {
             switch error {
             case .outputMissing(let failure):
-                #expect(failure.outputURL.lastPathComponent == "directory.osdi")
+                #expect(try expectedOutputURL(of: failure).lastPathComponent == "directory.osdi")
                 #expect(failure.exitCode == 0)
             default:
                 Issue.record("Expected missing output error, got \(error)")
@@ -2823,7 +2818,7 @@ module model; endmodule
         } catch let error {
             switch error {
             case .outputMissing(let failure):
-                #expect(failure.outputURL.lastPathComponent == "symlink.osdi")
+                #expect(try expectedOutputURL(of: failure).lastPathComponent == "symlink.osdi")
                 #expect(failure.exitCode == 0)
             default:
                 Issue.record("Expected missing output error, got \(error)")
@@ -2877,7 +2872,7 @@ module model; endmodule
         } catch let error {
             switch error {
             case .outputMissing(let failure):
-                #expect(failure.outputURL.lastPathComponent == "hard_link.osdi")
+                #expect(try expectedOutputURL(of: failure).lastPathComponent == "hard_link.osdi")
                 #expect(failure.exitCode == 0)
             default:
                 Issue.record("Expected missing output error, got \(error)")
@@ -2929,7 +2924,7 @@ module model; endmodule
         } catch let error {
             switch error {
             case .outputMissing(let failure):
-                #expect(failure.outputURL.lastPathComponent == "empty.osdi")
+                #expect(try expectedOutputURL(of: failure).lastPathComponent == "empty.osdi")
                 #expect(failure.exitCode == 0)
             default:
                 Issue.record("Expected missing output error, got \(error)")
@@ -3698,17 +3693,17 @@ module model; endmodule
             outputFileName: "renamed.osdi"
         ))
 
-        #expect(artifact.command.executableURL == executableURL)
-        #expect(artifact.command.arguments == ["renamed.va"])
-        #expect(artifact.command.workingDirectory.path.hasPrefix(outputDirectory.path))
-        #expect(artifact.stagedSourceURL.lastPathComponent == "renamed.va")
-        #expect(artifact.outputURL.lastPathComponent == "renamed.osdi")
+        #expect(URL(fileURLWithPath: try invocation(of: artifact.provenance).executable ?? "") == executableURL)
+        #expect(try invocation(of: artifact.provenance).arguments == ["renamed.va"])
+        #expect(try workingDirectory(of: artifact.provenance).path.hasPrefix(outputDirectory.path))
+        #expect(try stagedSourceURL(of: artifact).lastPathComponent == "renamed.va")
+        #expect(try outputURL(of: artifact).lastPathComponent == "renamed.osdi")
         #expect(artifact.openVAFVersion == "7.6.5")
         #expect(artifact.exitCode == 0)
-        #expect(artifact.standardOutput == "compiled renamed.va\n")
-        #expect(artifact.standardError == "")
+        #expect(try logText(of: artifact, named: "stdout.log") == "compiled renamed.va\n")
+        #expect(try logText(of: artifact, named: "stderr.log") == "")
 
-        let output = try String(contentsOf: artifact.outputURL, encoding: .utf8)
+        let output = try String(contentsOf: try outputURL(of: artifact), encoding: .utf8)
         #expect(output == "fake-osdi:renamed.va\n")
     }
 }
@@ -3935,6 +3930,65 @@ private func isSHA256Hex(_ value: String) -> Bool {
     return value.allSatisfy { character in
         character.isNumber || ("a"..."f").contains(character)
     }
+}
+
+private func outputURL(of report: any ArtifactProducing) throws -> URL {
+    let artifact = try #require(report.artifacts.first {
+        $0.locator.role == .output && $0.locator.kind == .model
+    })
+    return try artifact.locator.location.resolvedFileURL()
+}
+
+private func stagedSourceURL(of report: any ArtifactProducing) throws -> URL {
+    let artifact = try #require(report.artifacts.first {
+        $0.locator.role == .input && $0.locator.format.rawValue == "verilog-a"
+    })
+    return try artifact.locator.location.resolvedFileURL()
+}
+
+private func primaryInputArtifact(of report: any ArtifactProducing) throws -> ArtifactReference {
+    try #require(report.artifacts.first { $0.locator.role == .input })
+}
+
+private func inputArtifacts(of report: any ArtifactProducing) -> [ArtifactReference] {
+    report.artifacts.filter { $0.locator.role == .input }
+}
+
+private func stagedInputArtifacts(of report: any ArtifactProducing) -> [ArtifactReference] {
+    report.artifacts.filter { $0.locator.role == .input }
+}
+
+private func sourceInputArtifacts(of report: any ArtifactProducing) -> [ArtifactReference] {
+    report.artifacts.filter { $0.locator.role.rawValue == "source-input" }
+}
+
+private func invocation(of provenance: ExecutionProvenance) throws -> ExecutionInvocation {
+    try #require(provenance.invocation)
+}
+
+private func workingDirectory(of provenance: ExecutionProvenance) throws -> URL {
+    let path = try #require(invocation(of: provenance).workingDirectory)
+    return URL(fileURLWithPath: path, isDirectory: true)
+}
+
+private func expectedOutputURL(of failure: OpenVAFCompilationFailure) throws -> URL {
+    let sourceName = try #require(invocation(of: failure.provenance).arguments.last)
+    return try workingDirectory(of: failure.provenance)
+        .appendingPathComponent(sourceName)
+        .deletingPathExtension()
+        .appendingPathExtension("osdi")
+}
+
+private func logText(
+    of report: any ArtifactProducing,
+    named fileName: String
+) throws -> String {
+    let artifact = try #require(report.artifacts.first {
+        $0.locator.kind == .log
+            && $0.locator.location.value.contains(fileName)
+    })
+    let url = try artifact.locator.location.resolvedFileURL()
+    return try String(contentsOf: url, encoding: .utf8)
 }
 
 #endif

@@ -13,6 +13,7 @@ public enum OpenVAFError: Error, Sendable, Equatable {
     case cancelled(executablePath: String, standardOutput: String, standardError: String)
     case compilationTimedOut(OpenVAFCompilationFailure, timeout: Duration)
     case compilationCancelled(OpenVAFCompilationFailure)
+    case compilationLaunchFailed(OpenVAFCompilationFailure)
     case compilationFailed(OpenVAFCompilationFailure)
     case outputMissing(OpenVAFCompilationFailure)
 }
@@ -39,13 +40,15 @@ extension OpenVAFError: LocalizedError {
         case .cancelled(let executablePath, _, _):
             return "OpenVAF was cancelled at \(executablePath)"
         case .compilationTimedOut(let failure, let timeout):
-            return "OpenVAF compilation timed out after \(timeout) at \(failure.command.executableURL.path)"
+            return "OpenVAF compilation timed out after \(timeout): \(failure.diagnostics.first?.summary ?? "No diagnostic")"
         case .compilationCancelled(let failure):
-            return "OpenVAF compilation was cancelled at \(failure.command.executableURL.path)"
+            return "OpenVAF compilation was cancelled: \(failure.diagnostics.first?.summary ?? "No diagnostic")"
+        case .compilationLaunchFailed(let failure):
+            return "OpenVAF compilation could not launch: \(failure.diagnostics.first?.summary ?? "No diagnostic")"
         case .compilationFailed(let failure):
-            return "OpenVAF failed with exit code \(failure.exitCode ?? -1): \(failure.standardOutput)\(failure.standardError)"
+            return "OpenVAF failed with exit code \(failure.exitCode ?? -1): \(failure.diagnostics.first?.summary ?? "No diagnostic")"
         case .outputMissing(let failure):
-            return "OpenVAF did not produce expected output at \(failure.outputURL.path)"
+            return "OpenVAF did not produce the expected output: \(failure.diagnostics.first?.summary ?? "No diagnostic")"
         }
     }
 }

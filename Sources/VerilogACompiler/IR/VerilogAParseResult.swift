@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Foundation
 
 #if VerilogACompiler
@@ -16,6 +17,12 @@ public struct VerilogAParseResult: Sendable, Equatable {
         self.source = source
         self.modules = modules
         self.diagnostics = diagnostics
+    }
+
+    public var designDiagnostics: [DesignDiagnostic] {
+        diagnostics.map {
+            $0.designDiagnostic(sourceURL: source.sourceURL)
+        }
     }
 }
 

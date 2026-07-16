@@ -105,16 +105,20 @@ flowchart TD
 | `Sources/VerilogACompiler/Preprocessing` | Preprocessor filtering and include scanning |
 | `Sources/VerilogACompiler/Parsing` | Parser and declarator-name extraction |
 | `Sources/VerilogACompiler/IR` | Source-range-preserving Verilog-A IR |
-| `Sources/OpenVAFSupport/API` | Public OpenVAF requests, artifacts, availability, configuration, and errors |
+| `Sources/OpenVAFSupport/API` | Public OpenVAF requests, Foundation-backed results, availability, configuration, and errors |
 | `Sources/OpenVAFSupport/CommandLine` | External OpenVAF command-line compiler implementation and protocol conformance |
 | `Sources/OpenVAFSupport/Executable` | Executable validation, resolution, and version cache |
 | `Sources/OpenVAFSupport/Process` | Process command execution, output capture, cancellation, and timeout handling |
-| `Sources/OpenVAFSupport/Records` | Reproducibility metadata captured in compilation artifacts |
 | `Tests/OpenVAFSupportTests/OpenVAFSupport` | OpenVAF wrapper unit tests |
 | `Tests/OpenVAFSupportTests/VerilogACompiler` | In-process compiler frontend and include scanner tests |
 | `Tests/OpenVAFSupportTests/Integration` | E2E, OpenVAF oracle, and upstream parity tests |
 
 ## Build Traits
+
+`Package.swift` uses the sibling `../CircuiteFoundation` checkout when its
+manifest exists. An independent checkout falls back to the pinned
+`CircuiteFoundation` GitHub revision
+`2ec6ee13a89ac6885be3c26b41a9ee0ef89948ac`.
 
 SwiftPM traits choose which implementation track is compiled.
 
@@ -220,7 +224,9 @@ let artifact = try await compiler.compile(
     to: URL(fileURLWithPath: "/path/to/build/openvaf")
 )
 
-print(artifact.outputURL.path)
+if let output = artifact.outputArtifact {
+    print(try output.locator.location.resolvedFileURL().path)
+}
 ```
 
 Use `VerilogAOSDICompiling` when code should depend on an OSDI compiler capability instead of a concrete OpenVAF wrapper.
@@ -229,7 +235,7 @@ Use `VerilogAOSDICompiling` when code should depend on an OSDI compiler capabili
 import OpenVAFSupport
 import VerilogACompiler
 
-let compiler: any VerilogAOSDICompiling<OpenVAFCompilationArtifact> = CommandLineOpenVAFCompiler()
+let compiler: any VerilogAOSDICompiling<OpenVAFCompilationResult> = CommandLineOpenVAFCompiler()
 let artifact = try await compiler.compileOSDI(
     sourceAt: URL(fileURLWithPath: "/path/to/model.va"),
     to: URL(fileURLWithPath: "/path/to/build/openvaf")
@@ -287,10 +293,8 @@ let artifact = try await compiler.compile(
     to: URL(fileURLWithPath: "/path/to/build/openvaf")
 )
 
-print(artifact.outputURL.path)
-print(artifact.sourceSHA256)
-for inputFile in artifact.inputFiles {
-    print("\(inputFile.stagedRelativePath): \(inputFile.sha256)")
+for reference in artifact.artifacts {
+    print("\(reference.locator.role.rawValue): \(reference.digest.hexadecimalValue)")
 }
 ```
 
@@ -305,8 +309,9 @@ let artifact = try await compiler.compile(OpenVAFCompilationRequest(
     outputFileName: "model-debug.osdi"
 ))
 
-print(artifact.stagedSourceURL.lastPathComponent)
-print(artifact.outputURL.lastPathComponent)
+if let output = artifact.outputArtifact {
+    print(try output.locator.location.resolvedFileURL().lastPathComponent)
+}
 ```
 
 Output file names must be plain `.osdi` file names. Empty names, NUL bytes, path components, and names that would make the staged source collide with a staged include are rejected.
@@ -340,12 +345,13 @@ do {
     switch error {
     case .compilationFailed(let failure),
             .compilationCancelled(let failure),
+            .compilationLaunchFailed(let failure),
             .outputMissing(let failure):
-        print(failure.command.arguments)
-        print(failure.standardError)
+        print(failure.provenance.invocation?.arguments ?? [])
+        print(failure.diagnostics)
     case .compilationTimedOut(let failure, let timeout):
         print(timeout)
-        print(failure.standardOutput)
+        print(failure.logArtifacts)
     default:
         throw error
     }
@@ -354,36 +360,23 @@ do {
 
 ## Artifacts
 
-Successful compilations return `OpenVAFCompilationArtifact`.
+Successful compilations return `OpenVAFCompilationResult`; compile-specific
+errors retain `OpenVAFCompilationFailure`. Both types conform directly to
+`ArtifactProducing` and `DiagnosticReporting`.
 
-| Field | Meaning |
+| Foundation field | Meaning |
 |---|---|
-| `sourceURL` | Original source URL passed by the caller |
-| `sourceSHA256` | SHA-256 hash of the staged source |
-| `inputFiles` | Fingerprints for the primary staged source and all staged local includes |
-| `stagedSourceURL` | Source file copied into the run-scoped working directory |
-| `outputURL` | Expected OSDI output URL |
-| `command` | Sanitized command metadata |
-| `openVAFVersion` | Version parsed from `openvaf --version`, when the executable snapshot remains stable through artifact creation |
-| `exitCode` | OpenVAF process exit code |
-| `standardOutput` | Captured stdout |
-| `standardError` | Captured stderr |
-| `startedAt` / `finishedAt` | Process timing |
+| `artifacts` with role `source-input` | Original primary and included Verilog-A locations with the digest and byte count captured from the stage-time snapshot; later source mutation is detectable as a verifier mismatch |
+| `artifacts` with role `input` | Staged snapshots actually consumed by OpenVAF and recorded in provenance inputs |
+| `artifacts` with role `output` | Produced OSDI model, when valid |
+| `artifacts` with role `log-evidence` | Retained stdout and stderr text files |
+| `provenance.invocation` | Executable, arguments, and working directory |
+| `provenance.environment` | Platform, architecture, OpenVAF toolchain, and allowlisted environment digest |
+| `diagnostics` | Structured completion or failure diagnostics |
 
-`sourceURL` preserves the caller's requested source URL for auditability. The compiler validates and normalizes local file paths internally before reading, staging, and launching OpenVAF.
-
-`inputFiles` is ordered with the primary source first, followed by staged include files sorted by staged relative path.
-
-| `OpenVAFInputFileRecord` field | Meaning |
-|---|---|
-| `role` | `.primarySource` or `.include` |
-| `logicalPath` | Source-root-relative path before staging |
-| `sourceURL` | Caller or local include URL used to locate the file |
-| `stagedRelativePath` | Path inside the run-scoped staging directory |
-| `stagedURL` | Full URL of the staged snapshot |
-| `sha256` | SHA-256 hash of the staged snapshot bytes |
-
-`OpenVAFCommandRecord` stores redacted environment metadata. Environment values are not persisted directly; `OpenVAFEnvironmentRecord.valueSHA256` records a fingerprint for reproducibility checks.
+The environment fingerprint hashes only the reproducibility allowlist. Raw
+environment values, environment keys outside the allowlist, and secrets are
+never retained in the result or provenance.
 
 ## Working Directories
 
@@ -395,19 +388,16 @@ Each compile creates a run-scoped directory under the requested output directory
     <relative-source-directory>/
       <staged-source>.va
       <output>.osdi
+      openvaf.stdout.log
+      openvaf.stderr.log
     <relative-include-directory>/
       <local-include-file>
 ```
 
-Successful compilations keep this directory because the returned artifact points to files inside it. Failed compilations remove it by default.
-
-Use `keepsFailedWorkingDirectories` when failed staged files must remain available for inspection.
-
-```swift
-let compiler = CommandLineOpenVAFCompiler(configuration: OpenVAFConfiguration(
-    keepsFailedWorkingDirectories: true
-))
-```
+Successful and compile-specific failed executions keep this directory because
+their Foundation artifact references must remain verifiable. Staging failures
+that occur before an execution record can be created still follow the configured
+cleanup policy.
 
 ## Configuration
 
@@ -448,7 +438,7 @@ The external OpenVAF wrapper is exposed as an OSDI compiler capability through `
 import OpenVAFSupport
 import VerilogACompiler
 
-let compiler: any VerilogAOSDICompiling<OpenVAFCompilationArtifact> = CommandLineOpenVAFCompiler()
+let compiler: any VerilogAOSDICompiling<OpenVAFCompilationResult> = CommandLineOpenVAFCompiler()
 let artifact = try await compiler.compileOSDI(sourceAt: sourceURL, to: outputDirectory)
 ```
 

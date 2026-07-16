@@ -1,5 +1,19 @@
 // swift-tools-version: 6.3
 import PackageDescription
+import Foundation
+
+let workspaceRoot = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+
+let circuiteFoundationDependency: Package.Dependency = FileManager.default.fileExists(
+    atPath: workspaceRoot.appendingPathComponent("CircuiteFoundation/Package.swift").path
+)
+    ? .package(path: "../CircuiteFoundation")
+    : .package(
+        url: "https://github.com/1amageek/CircuiteFoundation.git",
+        revision: "2ec6ee13a89ac6885be3c26b41a9ee0ef89948ac"
+    )
 
 let package = Package(
     name: "swift-openvaf",
@@ -29,13 +43,22 @@ let package = Package(
         ),
         .default(enabledTraits: ["OpenVAFCLI", "VerilogACompiler"]),
     ],
+    dependencies: [
+        circuiteFoundationDependency,
+    ],
     targets: [
         .target(
-            name: "VerilogACompiler"
+            name: "VerilogACompiler",
+            dependencies: [
+                .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+            ]
         ),
         .target(
             name: "OpenVAFSupport",
-            dependencies: ["VerilogACompiler"]
+            dependencies: [
+                "VerilogACompiler",
+                .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+            ]
         ),
         .testTarget(
             name: "OpenVAFSupportTests",

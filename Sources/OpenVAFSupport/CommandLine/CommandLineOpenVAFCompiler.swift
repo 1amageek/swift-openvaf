@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Foundation
 import CryptoKit
 import VerilogACompiler
@@ -131,7 +132,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         }
     }
 
-    public func compile(_ request: OpenVAFCompilationRequest) async throws(OpenVAFError) -> OpenVAFCompilationArtifact {
+    public func compile(_ request: OpenVAFCompilationRequest) async throws(OpenVAFError) -> OpenVAFCompilationResult {
         try validateConfiguration(for: .compile)
 
         let environment = effectiveEnvironment()
@@ -140,13 +141,6 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         let prepared = try stage(source)
         let installationMetadata = await availableInstallation(matching: executableURL, environment: environment)
         let arguments = configuration.compilerArguments + [prepared.stagedSourceURL.lastPathComponent]
-        let commandRecord = OpenVAFCommandRecord(
-            executableURL: executableURL,
-            arguments: arguments,
-            workingDirectory: prepared.commandWorkingDirectory,
-            environment: environmentRecord(from: environment)
-        )
-
         let command = OpenVAFProcessCommand(
             executableURL: executableURL,
             arguments: arguments,
@@ -156,44 +150,45 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             terminationGrace: configuration.terminationGrace,
             postExitOutputDrainGrace: configuration.postExitOutputDrainGrace
         )
+        let compileRequestedAt = Date()
 
         do {
             let result = try await processRunner.run(command)
 
             guard result.exitCode == 0 else {
-                throw OpenVAFError.compilationFailed(compilationFailure(
+                throw OpenVAFError.compilationFailed(try compilationFailure(
                     prepared: prepared,
-                    command: commandRecord,
+                    command: command,
                     installationMetadata: installationMetadata,
                     exitCode: result.exitCode,
                     standardOutput: result.standardOutput,
                     standardError: result.standardError,
                     startedAt: result.startedAt,
-                    finishedAt: result.finishedAt
+                    finishedAt: result.finishedAt,
+                    diagnosticCode: "openvaf.compilation.failed",
+                    diagnosticSummary: "OpenVAF returned a nonzero exit status."
                 ))
             }
 
             guard isValidOutputFile(at: prepared.outputURL) else {
-                throw OpenVAFError.outputMissing(compilationFailure(
+                throw OpenVAFError.outputMissing(try compilationFailure(
                     prepared: prepared,
-                    command: commandRecord,
+                    command: command,
                     installationMetadata: installationMetadata,
                     exitCode: result.exitCode,
                     standardOutput: result.standardOutput,
                     standardError: result.standardError,
                     startedAt: result.startedAt,
-                    finishedAt: result.finishedAt
+                    finishedAt: result.finishedAt,
+                    diagnosticCode: "openvaf.output.missing",
+                    diagnosticSummary: "OpenVAF did not produce a valid OSDI output artifact."
                 ))
             }
 
-            return OpenVAFCompilationArtifact(
-                sourceURL: prepared.requestedSourceURL,
-                sourceSHA256: prepared.sourceSHA256,
-                inputFiles: prepared.inputFiles,
-                stagedSourceURL: prepared.stagedSourceURL,
-                outputURL: prepared.outputURL,
-                command: commandRecord,
-                openVAFVersion: openVAFVersion(from: installationMetadata),
+            return try compilationResult(
+                prepared: prepared,
+                command: command,
+                installationMetadata: installationMetadata,
                 exitCode: result.exitCode,
                 standardOutput: result.standardOutput,
                 standardError: result.standardError,
@@ -201,19 +196,30 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 finishedAt: result.finishedAt
             )
         } catch let error as OpenVAFProcessError {
-            cleanupFailedWorkingDirectory(prepared.stagingRootDirectory)
-            throw compileError(
+            throw try compileError(
                 from: error,
                 prepared: prepared,
-                command: commandRecord,
-                installationMetadata: installationMetadata
+                command: command,
+                installationMetadata: installationMetadata,
+                fallbackStartedAt: compileRequestedAt
             )
         } catch let error as OpenVAFError {
-            cleanupFailedWorkingDirectory(prepared.stagingRootDirectory)
             throw error
         } catch {
-            cleanupFailedWorkingDirectory(prepared.stagingRootDirectory)
-            throw .launchFailed(executablePath: executableURL.path, message: error.localizedDescription)
+            let finishedAt = Date()
+            let failure = try compilationFailure(
+                prepared: prepared,
+                command: command,
+                installationMetadata: installationMetadata,
+                exitCode: nil,
+                standardOutput: "",
+                standardError: error.localizedDescription,
+                startedAt: compileRequestedAt,
+                finishedAt: finishedAt,
+                diagnosticCode: "openvaf.compilation.unexpected-failure",
+                diagnosticSummary: "OpenVAF compilation failed unexpectedly."
+            )
+            throw .compilationLaunchFailed(failure)
         }
     }
 
@@ -225,7 +231,21 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         let stagedSourceURL: URL
         let outputURL: URL
         let sourceSHA256: String
-        let inputFiles: [OpenVAFInputFileRecord]
+        let inputFiles: [PreparedInputFile]
+    }
+
+    private enum PreparedInputRole: Sendable, Equatable {
+        case primarySource
+        case include
+    }
+
+    private struct PreparedInputFile: Sendable, Equatable {
+        let role: PreparedInputRole
+        let logicalPath: String
+        let sourceURL: URL
+        let stagedRelativePath: String
+        let stagedURL: URL
+        let sha256: String
     }
 
     private struct ValidatedSource {
@@ -612,7 +632,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
             )
         }
 
-        let includeInputFiles: [OpenVAFInputFileRecord]
+        let includeInputFiles: [PreparedInputFile]
         do {
             includeInputFiles = try stageIncludesDiscoveredFromStagedFiles(
                 sourceLogicalURL: source.sourceURL,
@@ -633,7 +653,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         }
 
         let sourceSHA256: String
-        let primaryInputFile: OpenVAFInputFileRecord
+        let primaryInputFile: PreparedInputFile
         do {
             sourceSHA256 = try sha256HexDigest(of: stagedSourceURL)
             primaryInputFile = try inputFileRecord(
@@ -711,7 +731,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         stagedSourceURL: URL,
         outputURL: URL,
         outputFileName: String
-    ) throws(OpenVAFError) -> [OpenVAFInputFileRecord] {
+    ) throws(OpenVAFError) -> [PreparedInputFile] {
         var pending = [PendingIncludeScan(
             logicalURL: sourceLogicalURL,
             stagedURL: stagedSourceURL,
@@ -720,7 +740,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         )]
         var scannedContexts: Set<IncludeScanContext> = []
         var stagedIncludes: Set<String> = []
-        var inputFiles: [OpenVAFInputFileRecord] = []
+        var inputFiles: [PreparedInputFile] = []
 
         while let pendingScan = pending.popLast() {
             let currentURL = pendingScan.logicalURL
@@ -812,15 +832,15 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
     }
 
     private func inputFileRecord(
-        role: OpenVAFInputFileRole,
+        role: PreparedInputRole,
         logicalURL: URL,
         sourceURL: URL,
         sourceRootDirectory: URL,
         stagedURL: URL,
         stagingRootDirectory: URL,
         sha256: String
-    ) throws(OpenVAFError) -> OpenVAFInputFileRecord {
-        OpenVAFInputFileRecord(
+    ) throws(OpenVAFError) -> PreparedInputFile {
+        PreparedInputFile(
             role: role,
             logicalPath: try relativePath(from: sourceRootDirectory, to: logicalURL),
             sourceURL: sourceURL,
@@ -830,7 +850,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         )
     }
 
-    private func sortedInputFileRecords(_ inputFiles: [OpenVAFInputFileRecord]) -> [OpenVAFInputFileRecord] {
+    private func sortedInputFileRecords(_ inputFiles: [PreparedInputFile]) -> [PreparedInputFile] {
         inputFiles.sorted { lhs, rhs in
             if lhs.role != rhs.role {
                 return lhs.role == .primarySource
@@ -1170,28 +1190,15 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         configuration.processEnvironment ?? ProcessInfo.processInfo.environment
     }
 
-    private func environmentRecord(from environment: [String: String]) -> OpenVAFEnvironmentRecord {
-        let recordedEnvironment = recordedEnvironment(from: environment)
-        return OpenVAFEnvironmentRecord(
-            source: configuration.processEnvironment == nil ? .inherited : .explicit,
-            keys: Array(recordedEnvironment.keys).sorted(),
-            valueSHA256: sha256HexDigest(of: recordedEnvironment)
-        )
-    }
-
     private func recordedEnvironment(from environment: [String: String]) -> [String: String] {
-        guard configuration.processEnvironment == nil else {
-            return environment
-        }
-
-        let inheritedKeys = [
+        let reproducibilityKeys = [
             "OPENVAF_BIN",
             "PATH",
             "DYLD_LIBRARY_PATH",
             "LD_LIBRARY_PATH",
         ]
         return environment.filter { key, _ in
-            inheritedKeys.contains(key)
+            reproducibilityKeys.contains(key)
         }
     }
 
@@ -1306,57 +1313,309 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         }
     }
 
+    private func compilationResult(
+        prepared: PreparedSource,
+        command: OpenVAFProcessCommand,
+        installationMetadata: InstallationMetadata?,
+        exitCode: Int32,
+        standardOutput: String,
+        standardError: String,
+        startedAt: Date,
+        finishedAt: Date
+    ) throws(OpenVAFError) -> OpenVAFCompilationResult {
+        do {
+            let version = openVAFVersion(from: installationMetadata)
+            let artifacts = try compilationArtifacts(
+                prepared: prepared,
+                standardOutput: standardOutput,
+                standardError: standardError,
+                includeOutput: true,
+                producer: producerIdentity(version: version)
+            )
+            let outputArtifact = artifacts.first {
+                $0.locator.role == .output && $0.locator.kind == .model
+            }
+            return OpenVAFCompilationResult(
+                artifacts: artifacts,
+                diagnostics: [DesignDiagnostic(
+                    code: .trusted("openvaf.compilation.completed"),
+                    severity: .information,
+                    summary: "OpenVAF produced an OSDI model artifact.",
+                    artifactID: outputArtifact?.id
+                )],
+                provenance: try executionProvenance(
+                    command: command,
+                    version: version,
+                    artifacts: artifacts,
+                    startedAt: startedAt,
+                    finishedAt: finishedAt
+                ),
+                openVAFVersion: version,
+                exitCode: exitCode
+            )
+        } catch let error as OpenVAFError {
+            throw error
+        } catch {
+            throw .fileSystemFailure(
+                operation: "create compilation evidence",
+                path: prepared.stagingRootDirectory.path,
+                message: error.localizedDescription
+            )
+        }
+    }
+
     private func compilationFailure(
         prepared: PreparedSource,
-        command: OpenVAFCommandRecord,
+        command: OpenVAFProcessCommand,
         installationMetadata: InstallationMetadata?,
         exitCode: Int32?,
         standardOutput: String,
         standardError: String,
-        startedAt: Date?,
-        finishedAt: Date?
-    ) -> OpenVAFCompilationFailure {
-        OpenVAFCompilationFailure(
-            sourceURL: prepared.requestedSourceURL,
-            sourceSHA256: prepared.sourceSHA256,
-            inputFiles: prepared.inputFiles,
-            stagedSourceURL: prepared.stagedSourceURL,
-            outputURL: prepared.outputURL,
-            command: command,
-            openVAFVersion: openVAFVersion(from: installationMetadata),
-            exitCode: exitCode,
+        startedAt: Date,
+        finishedAt: Date,
+        diagnosticCode: String,
+        diagnosticSummary: String
+    ) throws(OpenVAFError) -> OpenVAFCompilationFailure {
+        do {
+            let version = openVAFVersion(from: installationMetadata)
+            let artifacts = try compilationArtifacts(
+                prepared: prepared,
+                standardOutput: standardOutput,
+                standardError: standardError,
+                includeOutput: isValidOutputFile(at: prepared.outputURL),
+                producer: producerIdentity(version: version)
+            )
+            return OpenVAFCompilationFailure(
+                artifacts: artifacts,
+                diagnostics: [DesignDiagnostic(
+                    code: .trusted(diagnosticCode),
+                    severity: .error,
+                    summary: diagnosticSummary,
+                    detail: exitCode.map { "Exit code: \($0)." },
+                    artifactID: artifacts.first { $0.locator.kind == .log }?.id,
+                    suggestedActions: [SuggestedAction(
+                        code: "inspect_openvaf_log",
+                        summary: "Inspect the retained OpenVAF stdout and stderr artifacts."
+                    )]
+                )],
+                provenance: try executionProvenance(
+                    command: command,
+                    version: version,
+                    artifacts: artifacts,
+                    startedAt: startedAt,
+                    finishedAt: finishedAt
+                ),
+                openVAFVersion: version,
+                exitCode: exitCode
+            )
+        } catch let error as OpenVAFError {
+            throw error
+        } catch {
+            throw .fileSystemFailure(
+                operation: "create compilation failure evidence",
+                path: prepared.stagingRootDirectory.path,
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func compilationArtifacts(
+        prepared: PreparedSource,
+        standardOutput: String,
+        standardError: String,
+        includeOutput: Bool,
+        producer: ProducerIdentity
+    ) throws -> [ArtifactReference] {
+        let sourceRole = try ArtifactRole(validatingRawValue: "source-input")
+        let logRole = try ArtifactRole(validatingRawValue: "log-evidence")
+        let verilogAFormat = try ArtifactFormat(rawValue: "verilog-a")
+        let osdiFormat = try ArtifactFormat(rawValue: "osdi")
+        var artifacts: [ArtifactReference] = []
+
+        for input in prepared.inputFiles {
+            let snapshotData = try Data(contentsOf: input.stagedURL)
+            let snapshotDigest = try ContentDigest(algorithm: .sha256, hexadecimalValue: input.sha256)
+            artifacts.append(ArtifactReference(
+                id: ArtifactID(stableKey: "openvaf-source-\(input.logicalPath)-\(input.sha256)"),
+                locator: ArtifactLocator(
+                    location: try ArtifactLocation(fileURL: input.sourceURL),
+                    role: sourceRole,
+                    kind: .model,
+                    format: verilogAFormat
+                ),
+                digest: snapshotDigest,
+                byteCount: UInt64(snapshotData.count)
+            ))
+            artifacts.append(ArtifactReference(
+                id: ArtifactID(stableKey: "openvaf-staged-\(input.stagedRelativePath)-\(input.sha256)"),
+                locator: ArtifactLocator(
+                    location: try ArtifactLocation(fileURL: input.stagedURL),
+                    role: .input,
+                    kind: .model,
+                    format: verilogAFormat
+                ),
+                digest: snapshotDigest,
+                byteCount: UInt64(snapshotData.count),
+                producer: producer
+            ))
+        }
+
+        if includeOutput {
+            artifacts.append(try artifactReference(
+                at: prepared.outputURL,
+                stableID: "openvaf-output-\(prepared.outputURL.lastPathComponent)",
+                role: .output,
+                kind: .model,
+                format: osdiFormat,
+                producer: producer
+            ))
+        }
+
+        artifacts.append(contentsOf: try logArtifactReferences(
             standardOutput: standardOutput,
             standardError: standardError,
-            startedAt: startedAt,
-            finishedAt: finishedAt
+            directory: prepared.commandWorkingDirectory,
+            role: logRole,
+            producer: producer
+        ))
+        return artifacts
+    }
+
+    private func logArtifactReferences(
+        standardOutput: String,
+        standardError: String,
+        directory: URL,
+        role: ArtifactRole,
+        producer: ProducerIdentity
+    ) throws -> [ArtifactReference] {
+        let standardOutputURL = directory.appendingPathComponent("openvaf.stdout.log")
+        let standardErrorURL = directory.appendingPathComponent("openvaf.stderr.log")
+        try Data(standardOutput.utf8).write(to: standardOutputURL, options: .atomic)
+        try Data(standardError.utf8).write(to: standardErrorURL, options: .atomic)
+        return [
+            try artifactReference(
+                at: standardOutputURL,
+                stableID: "openvaf-standard-output",
+                role: role,
+                kind: .log,
+                format: .text,
+                producer: producer
+            ),
+            try artifactReference(
+                at: standardErrorURL,
+                stableID: "openvaf-standard-error",
+                role: role,
+                kind: .log,
+                format: .text,
+                producer: producer
+            ),
+        ]
+    }
+
+    private func artifactReference(
+        at url: URL,
+        stableID: String,
+        role: ArtifactRole,
+        kind: ArtifactKind,
+        format: ArtifactFormat,
+        producer: ProducerIdentity
+    ) throws -> ArtifactReference {
+        let data = try Data(contentsOf: url)
+        return ArtifactReference(
+            id: ArtifactID(stableKey: stableID + "-" + url.standardizedFileURL.path),
+            locator: ArtifactLocator(
+                location: try ArtifactLocation(fileURL: url),
+                role: role,
+                kind: kind,
+                format: format
+            ),
+            digest: try ContentDigest(
+                algorithm: .sha256,
+                hexadecimalValue: sha256HexDigest(of: SHA256.hash(data: data))
+            ),
+            byteCount: UInt64(data.count),
+            producer: producer
         )
+    }
+
+    private func producerIdentity(version: String?) throws -> ProducerIdentity {
+        try ProducerIdentity(
+            kind: .tool,
+            identifier: "openvaf",
+            version: version ?? "unknown"
+        )
+    }
+
+    private func executionProvenance(
+        command: OpenVAFProcessCommand,
+        version: String?,
+        artifacts: [ArtifactReference],
+        startedAt: Date,
+        finishedAt: Date
+    ) throws -> ExecutionProvenance {
+        let environmentDigest = try ContentDigest(
+            algorithm: .sha256,
+            hexadecimalValue: sha256HexDigest(
+                of: recordedEnvironment(from: command.environment ?? [:])
+            )
+        )
+        return try ExecutionProvenance(
+            producer: producerIdentity(version: version),
+            inputs: artifacts.filter { $0.locator.role == .input },
+            invocation: ExecutionInvocation.externalProcess(
+                executable: command.executableURL.path(percentEncoded: false),
+                arguments: command.arguments,
+                workingDirectory: command.workingDirectory.path(percentEncoded: false)
+            ),
+            environment: ExecutionEnvironmentFingerprint(
+                platform: platformIdentifier,
+                architecture: architectureIdentifier,
+                toolchain: "openvaf-\(version ?? "unknown")",
+                environmentDigest: environmentDigest
+            ),
+            startedAt: startedAt,
+            completedAt: finishedAt
+        )
+    }
+
+    private var platformIdentifier: String {
+        let version = ProcessInfo.processInfo.operatingSystemVersion
+        return "macos-\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
+    }
+
+    private var architectureIdentifier: String {
+        #if arch(arm64)
+        return "arm64"
+        #elseif arch(x86_64)
+        return "x86_64"
+        #else
+        return "unknown"
+        #endif
     }
 
     private func compileError(
         from error: OpenVAFProcessError,
         prepared: PreparedSource,
-        command: OpenVAFCommandRecord,
-        installationMetadata: InstallationMetadata?
-    ) -> OpenVAFError {
+        command: OpenVAFProcessCommand,
+        installationMetadata: InstallationMetadata?,
+        fallbackStartedAt: Date
+    ) throws(OpenVAFError) -> OpenVAFError {
         switch error {
         case .launchFailed(let executablePath, let message):
-            return .launchFailed(executablePath: executablePath, message: message)
+            return .compilationLaunchFailed(try compilationFailure(
+                prepared: prepared,
+                command: command,
+                installationMetadata: installationMetadata,
+                exitCode: nil,
+                standardOutput: "",
+                standardError: message,
+                startedAt: fallbackStartedAt,
+                finishedAt: Date(),
+                diagnosticCode: "openvaf.compilation.launch-failed",
+                diagnosticSummary: "OpenVAF could not be launched at \(executablePath)."
+            ))
         case .timedOut(_, let timeout, let standardOutput, let standardError, let startedAt, let finishedAt):
-            return .compilationTimedOut(
-                compilationFailure(
-                    prepared: prepared,
-                    command: command,
-                    installationMetadata: installationMetadata,
-                    exitCode: nil,
-                    standardOutput: standardOutput,
-                    standardError: standardError,
-                    startedAt: startedAt,
-                    finishedAt: finishedAt
-                ),
-                timeout: timeout,
-            )
-        case .cancelled(_, let standardOutput, let standardError, let startedAt, let finishedAt):
-            return .compilationCancelled(compilationFailure(
+            return .compilationTimedOut(try compilationFailure(
                 prepared: prepared,
                 command: command,
                 installationMetadata: installationMetadata,
@@ -1364,7 +1623,22 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 standardOutput: standardOutput,
                 standardError: standardError,
                 startedAt: startedAt,
-                finishedAt: finishedAt
+                finishedAt: finishedAt,
+                diagnosticCode: "openvaf.compilation.timed-out",
+                diagnosticSummary: "OpenVAF exceeded its compilation timeout."
+            ), timeout: timeout)
+        case .cancelled(_, let standardOutput, let standardError, let startedAt, let finishedAt):
+            return .compilationCancelled(try compilationFailure(
+                prepared: prepared,
+                command: command,
+                installationMetadata: installationMetadata,
+                exitCode: nil,
+                standardOutput: standardOutput,
+                standardError: standardError,
+                startedAt: startedAt,
+                finishedAt: finishedAt,
+                diagnosticCode: "openvaf.compilation.cancelled",
+                diagnosticSummary: "OpenVAF compilation was cancelled."
             ))
         }
     }
@@ -1407,6 +1681,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 .fileSystemFailure,
                 .compilationTimedOut,
                 .compilationCancelled,
+                .compilationLaunchFailed,
                 .compilationFailed,
                 .outputMissing:
             return .launchFailed(executablePath: "<unknown>", message: error.localizedDescription)
