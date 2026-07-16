@@ -5,7 +5,7 @@ import Testing
 
 #if OpenVAFCLI
 
-@Suite("Process controller", .timeLimit(.minutes(1)))
+@Suite("Process controller", .serialized, .timeLimit(.minutes(1)))
 struct ProcessControllerTests {
     @Test("Controller applies termination requested before process start")
     func controllerAppliesTerminationRequestedBeforeProcessStart() async throws {
