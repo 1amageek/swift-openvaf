@@ -67,7 +67,7 @@ flowchart TD
 |---|---|---|
 | `VerilogACompiler` | `VerilogAParsing`, `VerilogAOSDICompiling`, source buffers, lexer, preprocessor, parser, source-range IR, include scanner | Protocol-first Verilog-A compiler surface and in-process frontend |
 | `OpenVAFSupport` | `CommandLineOpenVAFCompiler`, process execution, executable resolution, OpenVAF artifacts and failures | External OpenVAF wrapper that conforms to `VerilogAOSDICompiling` |
-| Oracle comparison | Conditional tests | Uses external OpenVAF as a black-box oracle when a compatible executable is available |
+| Oracle comparison | Mandatory hosted CI and optional local tests | Uses pinned external OpenVAF as a black-box oracle in hosted CI; local runs remain conditional on tool availability |
 
 The package implementation is developed independently from OpenVAF's GPL source. OpenVAF is used as an external executable and black-box oracle, not as linked or copied implementation code.
 
@@ -118,7 +118,7 @@ flowchart TD
 `Package.swift` uses the sibling `../CircuiteFoundation` checkout when its
 manifest exists. An independent checkout falls back to the pinned
 `CircuiteFoundation` GitHub revision
-`2ec6ee13a89ac6885be3c26b41a9ee0ef89948ac`.
+`7abcac83517935c9b9f7553d7016d62cffde259d`.
 
 SwiftPM traits choose which implementation track is compiled.
 

@@ -9,8 +9,13 @@ frontend are implemented. The wrapper does not bundle or embed OpenVAF.
 
 | ID | Priority | Owner | Task | Exit criteria |
 |---|---|---|---|---|
-| OVAF-1 | P1 | swift-openvaf CI and oracle workflow | Retain a mandatory real-OpenVAF end-to-end lane on a supported execution platform. | CI resolves a pinned executable, verifies its identity, compiles retained Verilog-A sources to non-empty OSDI artifacts, retains stdout/stderr/provenance, runs failure/timeout cases, and executes frontend oracle/upstream parity checks without a skip-based pass. |
 | OVAF-2 | P2 | VerilogACompiler | Expand the structural frontend into deeper Verilog-A semantic analysis or code generation when required by consumers. | The supported semantic subset is explicitly versioned; types, contributions, functions, parameters, analog behavior, diagnostics, and source ranges have deterministic IR and independent oracle fixtures; unsupported semantics remain explicit. |
+
+## Completed P1 tasks
+
+| ID | Completed | Evidence |
+|---|---|---|
+| OVAF-1 | 2026-07-26 | Hosted CI run `30179955107` passed the pinned Linux OpenVAF installation and SHA verification, production-API Verilog-A-to-OSDI qualification, failure/timeout paths, retained evidence upload, SwiftPM traits, Thread Sanitizer, and pinned frontend parity without skip-based success. |
 
 ## External prerequisites
 
@@ -23,5 +28,6 @@ macOS model loading.
 - `README.md`
 - `Package.swift`
 - GitHub CI workflow
+- Hosted CI run `30179955107`
 - External compiler, process, resolver, frontend, parser, and oracle test paths
 - `Sources` incomplete-implementation marker scan
