@@ -3,6 +3,8 @@ import Foundation
 import OpenVAFSupport
 import VerilogACompiler
 
+#if OpenVAFCLI && VerilogACompiler
+
 @main
 struct OpenVAFQualificationCLI {
     static func main() async throws {
@@ -315,3 +317,14 @@ endmodule
         "openvaf/test_data/osdi/noise.va",
     ]
 }
+
+#else
+
+@main
+struct OpenVAFQualificationCLI {
+    static func main() throws {
+        throw OpenVAFQualificationError.requiredTraitsMissing
+    }
+}
+
+#endif

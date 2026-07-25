@@ -6,6 +6,7 @@ enum OpenVAFQualificationError: Error, LocalizedError {
     case expectedCompilationFailure
     case unexpectedCompilationError(String)
     case expectedTimeout
+    case requiredTraitsMissing
 
     var errorDescription: String? {
         switch self {
@@ -19,6 +20,8 @@ enum OpenVAFQualificationError: Error, LocalizedError {
             "OpenVAF returned an unexpected qualification error: \(message)"
         case .expectedTimeout:
             "OpenVAF compilation unexpectedly completed within the forced timeout."
+        case .requiredTraitsMissing:
+            "OpenVAF qualification requires the OpenVAFCLI and VerilogACompiler traits."
         }
     }
 }
