@@ -2,6 +2,11 @@
 
 import Foundation
 import Synchronization
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 package enum ProcessCompletion: Sendable {
     case exited(Int32)

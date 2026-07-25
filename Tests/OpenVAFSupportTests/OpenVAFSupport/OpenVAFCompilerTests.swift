@@ -1,6 +1,5 @@
 import CircuiteFoundation
 import Foundation
-import Darwin
 import Testing
 @testable import OpenVAFSupport
 @testable import VerilogACompiler
