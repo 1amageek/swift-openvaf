@@ -32,6 +32,10 @@ let package = Package(
             name: "VerilogACompiler",
             targets: ["VerilogACompiler"]
         ),
+        .executable(
+            name: "openvaf-qualification",
+            targets: ["OpenVAFQualificationCLI"]
+        ),
     ],
     traits: [
         .trait(
@@ -59,6 +63,14 @@ let package = Package(
         .target(
             name: "OpenVAFSupport",
             dependencies: [
+                "VerilogACompiler",
+                .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+            ]
+        ),
+        .executableTarget(
+            name: "OpenVAFQualificationCLI",
+            dependencies: [
+                "OpenVAFSupport",
                 "VerilogACompiler",
                 .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
             ]

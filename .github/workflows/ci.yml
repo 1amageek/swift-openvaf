@@ -69,7 +69,7 @@ jobs:
 
   openvaf-oracle:
     name: Pinned OpenVAF oracle
-    runs-on: macos-26
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
@@ -83,37 +83,25 @@ jobs:
           ref: a9697ae7780518f021f9f64e819b3a57033bd39f
           path: .openvaf-upstream
 
-      - name: Start Linux execution environment
-        run: |
-          brew install colima docker
-          colima start --cpu 3 --memory 6 --disk 20
-          docker info
-
       - name: Install and verify pinned OpenVAF
         env:
           OPENVAF_INSTALLATION_EVIDENCE: ${{ github.workspace }}/.real-tool-evidence/openvaf-installation.json
-        run: scripts/install-openvaf-oracle.sh
-
-      - name: Run mandatory real-tool and frontend oracle tests
-        env:
-          OPENVAF_BIN: ${{ runner.home }}/.local/bin/openvaf
-          OPENVAF_E2E: "1"
-          OPENVAF_ORACLE: "1"
-          OPENVAF_UPSTREAM_ROOT: ${{ github.workspace }}/.openvaf-upstream
-          OPENVAF_EVIDENCE_ROOT: ${{ github.workspace }}/.real-tool-evidence/executions
+          OPENVAF_INSTALL_ROOT: ${{ runner.temp }}/openvaf
+          OPENVAF_SHIM_PATH: ${{ runner.temp }}/bin/openvaf
         run: |
-          mkdir -p .test-results .real-tool-evidence
-          scripts/swift-test-timeout.sh 600 \
-            xcodebuild test \
-              -quiet \
-              -workspace .swiftpm/xcode/package.xcworkspace \
-              -scheme swift-openvaf-Package \
-              -destination 'platform=macOS' \
-              -resultBundlePath .test-results/OpenVAFOracle.xcresult \
-              -only-testing:OpenVAFSupportTests/OpenVAFE2ETests \
-              -only-testing:OpenVAFSupportTests/VerilogACompilerFrontendOracleComparisonTests \
-              -only-testing:OpenVAFSupportTests/OpenVAFUpstreamFrontendParityTests \
-              -only-testing:OpenVAFSupportTests/FoundationOpenVAFProcessRunnerTests
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc binutils libc6-dev
+          scripts/install-openvaf-oracle.sh
+
+      - name: Run mandatory production-API qualification
+        env:
+          OPENVAF_BIN: ${{ runner.temp }}/bin/openvaf
+          OPENVAF_EXPECTED_BINARY_SHA256: 6918195bc6cca54016095923bea190f7a1d96dd8b062104c602e8c28578cb5e3
+          OPENVAF_UPSTREAM_ROOT: ${{ github.workspace }}/.openvaf-upstream
+          OPENVAF_EVIDENCE_ROOT: ${{ github.workspace }}/.real-tool-evidence/qualification
+        run: |
+          mkdir -p .real-tool-evidence
+          scripts/swift-test-timeout.sh 600 swift run openvaf-qualification
 
       - name: Retain real-tool evidence
         if: always()
@@ -121,6 +109,42 @@ jobs:
         with:
           name: openvaf-oracle-evidence
           if-no-files-found: error
-          path: |
-            .real-tool-evidence
-            .test-results/OpenVAFOracle.xcresult
+          path: .real-tool-evidence
+
+  frontend-parity:
+    name: Pinned frontend parity
+    runs-on: macos-26
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Checkout pinned OpenVAF corpus
+        uses: actions/checkout@v5
+        with:
+          repository: pascalkuthe/OpenVAF
+          ref: a9697ae7780518f021f9f64e819b3a57033bd39f
+          path: .openvaf-upstream
+
+      - name: Run pinned frontend parity through Xcode
+        env:
+          OPENVAF_UPSTREAM_ROOT: ${{ github.workspace }}/.openvaf-upstream
+        run: |
+          mkdir -p .test-results
+          scripts/swift-test-timeout.sh 600 \
+            xcodebuild test \
+              -quiet \
+              -scheme swift-openvaf-Package \
+              -destination 'platform=macOS' \
+              -resultBundlePath .test-results/OpenVAFFrontendParity.xcresult \
+              -only-testing:OpenVAFSupportTests/OpenVAFUpstreamFrontendParityTests/compilerFrontendValuesMatchOpenVAFFrontendFixtures \
+              -only-testing:OpenVAFSupportTests/OpenVAFUpstreamFrontendParityTests/compilerFrontendParameterValuesExcludeUpstreamConstraintClauses
+
+      - name: Retain frontend parity result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openvaf-frontend-parity
+          if-no-files-found: error
+          path: .test-results/OpenVAFFrontendParity.xcresult

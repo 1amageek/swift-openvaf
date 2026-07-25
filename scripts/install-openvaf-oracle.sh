@@ -10,6 +10,7 @@ install_root="${OPENVAF_INSTALL_ROOT:-$HOME/.local/share/openvaf/${openvaf_versi
 shim_path="${OPENVAF_SHIM_PATH:-$HOME/.local/bin/openvaf}"
 image_name="${OPENVAF_DOCKER_IMAGE:-swift-openvaf/openvaf-${openvaf_version}:ubuntu22}"
 installation_evidence="${OPENVAF_INSTALLATION_EVIDENCE:-}"
+host_os="$(uname -s)"
 
 require_command() {
     if ! command -v "$1" >/dev/null 2>&1; then
@@ -48,9 +49,14 @@ verify_sha256() {
 require_command curl
 require_command shasum
 require_command tar
-require_command docker
 
-ensure_docker_running
+if [ "$host_os" = "Darwin" ]; then
+    require_command docker
+    ensure_docker_running
+elif [ "$host_os" != "Linux" ]; then
+    echo "Unsupported OpenVAF oracle host: $host_os" >&2
+    exit 1
+fi
 
 mkdir -p "$install_root"
 archive_path="$install_root/$archive_name"
@@ -64,7 +70,8 @@ tar -xzf "$archive_path" -C "$install_root"
 chmod 0755 "$install_root/openvaf"
 verify_sha256 "$install_root/openvaf" "$binary_sha256"
 
-docker build --platform linux/amd64 -t "$image_name" -f - "$install_root" <<'EOF'
+if [ "$host_os" = "Darwin" ]; then
+    docker build --platform linux/amd64 -t "$image_name" -f - "$install_root" <<'EOF'
 FROM ubuntu:22.04
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates gcc binutils libc6-dev \
@@ -74,21 +81,29 @@ RUN chmod 0755 /usr/local/bin/openvaf
 ENTRYPOINT ["/usr/local/bin/openvaf"]
 EOF
 
-mkdir -p "$(dirname "$shim_path")"
-{
-    printf '%s\n' '#!/bin/sh'
-    printf '%s\n' 'set -eu'
-    printf '\n'
-    printf 'image="%s"\n' "$image_name"
-    printf '%s\n' 'workdir="$(pwd)"'
-    printf '\n'
-    printf '%s\n' 'exec docker run --rm --platform linux/amd64 \'
-    printf '%s\n' '  --user "$(id -u):$(id -g)" \'
-    printf '%s\n' '  -v "$workdir:/work" \'
-    printf '%s\n' '  -w /work \'
-    printf '%s\n' '  "$image" "$@"'
-} > "$shim_path"
-chmod 0755 "$shim_path"
+    mkdir -p "$(dirname "$shim_path")"
+    {
+        printf '%s\n' '#!/bin/sh'
+        printf '%s\n' 'set -eu'
+        printf '\n'
+        printf 'image="%s"\n' "$image_name"
+        printf '%s\n' 'workdir="$(pwd)"'
+        printf '\n'
+        printf '%s\n' 'exec docker run --rm --platform linux/amd64 \'
+        printf '%s\n' '  --user "$(id -u):$(id -g)" \'
+        printf '%s\n' '  -v "$workdir:/work" \'
+        printf '%s\n' '  -w /work \'
+        printf '%s\n' '  "$image" "$@"'
+    } > "$shim_path"
+    chmod 0755 "$shim_path"
+    execution_mode="docker-linux-amd64"
+    image_id="$(docker image inspect --format '{{.Id}}' "$image_name")"
+else
+    mkdir -p "$(dirname "$shim_path")"
+    ln -sf "$install_root/openvaf" "$shim_path"
+    execution_mode="native-linux-amd64"
+    image_id=""
+fi
 
 reported_version="$("$shim_path" --version)"
 printf '%s\n' "$reported_version"
@@ -96,13 +111,18 @@ printf '%s\n' "$reported_version"
 if [ -n "$installation_evidence" ]; then
     evidence_directory="$(dirname "$installation_evidence")"
     mkdir -p "$evidence_directory"
-    image_id="$(docker image inspect --format '{{.Id}}' "$image_name")"
     {
         printf '%s\n' '{'
         printf '  "archiveSHA256": "%s",\n' "$archive_sha256"
         printf '  "binarySHA256": "%s",\n' "$binary_sha256"
-        printf '  "dockerImage": "%s",\n' "$image_name"
-        printf '  "dockerImageID": "%s",\n' "$image_id"
+        if [ -n "$image_id" ]; then
+            printf '  "dockerImage": "%s",\n' "$image_name"
+            printf '  "dockerImageID": "%s",\n' "$image_id"
+        else
+            printf '%s\n' '  "dockerImage": null,'
+            printf '%s\n' '  "dockerImageID": null,'
+        fi
+        printf '  "executionMode": "%s",\n' "$execution_mode"
         printf '  "openVAFVersion": "%s",\n' "$openvaf_version"
         printf '  "shimPath": "%s"\n' "$shim_path"
         printf '%s\n' '}'

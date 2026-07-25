@@ -524,19 +524,22 @@ End-to-end tests are gated because OpenVAF is an external tool. They run automat
 OPENVAF_BIN=/path/to/openvaf OPENVAF_E2E=1 swift test --filter OpenVAFE2ETests
 ```
 
-The hosted `Pinned OpenVAF oracle` job always sets `OPENVAF_E2E=1`; missing
-tools, failed compilation, and missing upstream fixtures therefore fail the
-job instead of becoming skipped tests. The job verifies the pinned OpenVAF
-archive and executable SHA-256 values, runs real success and malformed-source
-compilations, exercises process timeout behavior, and executes frontend oracle
-and upstream parity suites through `xcodebuild`. It retains:
+The hosted `Pinned OpenVAF oracle` job runs the production
+`OpenVAFSupport` API through the `openvaf-qualification` executable on Linux;
+missing tools, failed compilation, timeout-contract failures, and missing
+upstream fixtures fail the command instead of becoming skipped tests. A
+separate macOS job executes the pinned frontend parity suites through
+`xcodebuild`. Together they verify the pinned OpenVAF archive and executable
+SHA-256 values, real success and malformed-source compilations, process timeout
+behavior, and same-source frontend/OpenVAF acceptance. They retain:
 
 | Evidence | Retained content |
 |---|---|
 | Installation manifest | OpenVAF version, archive digest, executable digest, Docker image identity, and shim path |
 | Successful execution | OSDI bytes, staged source, stdout/stderr, invocation, environment, and canonical result JSON |
 | Failed execution | Malformed source, stdout/stderr, invocation, environment, diagnostics, and canonical failure JSON |
-| Test result | Full `OpenVAFOracle.xcresult` bundle |
+| Qualification report | Tool digest plus success, failure, timeout, and upstream result paths |
+| Test result | Full `OpenVAFFrontendParity.xcresult` bundle |
 
 ### macOS OpenVAF Oracle
 
