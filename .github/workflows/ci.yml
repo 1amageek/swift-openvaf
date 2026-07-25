@@ -110,6 +110,7 @@ jobs:
           name: openvaf-oracle-evidence
           if-no-files-found: error
           path: .real-tool-evidence
+          include-hidden-files: true
 
   frontend-parity:
     name: Pinned frontend parity
