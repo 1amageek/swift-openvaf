@@ -52,6 +52,10 @@ let package = Package(
     ],
     dependencies: [
         circuiteFoundationDependency,
+        .package(
+            url: "https://github.com/apple/swift-crypto.git",
+            exact: "4.5.1"
+        ),
     ],
     targets: [
         .target(
@@ -65,6 +69,7 @@ let package = Package(
             dependencies: [
                 "VerilogACompiler",
                 .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+                .product(name: "Crypto", package: "swift-crypto"),
             ]
         ),
         .executableTarget(

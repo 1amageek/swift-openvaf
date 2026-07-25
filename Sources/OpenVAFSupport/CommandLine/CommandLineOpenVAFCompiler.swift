@@ -1,6 +1,10 @@
 import CircuiteFoundation
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 import VerilogACompiler
 
 #if OpenVAFCLI
