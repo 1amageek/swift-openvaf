@@ -524,6 +524,20 @@ End-to-end tests are gated because OpenVAF is an external tool. They run automat
 OPENVAF_BIN=/path/to/openvaf OPENVAF_E2E=1 swift test --filter OpenVAFE2ETests
 ```
 
+The hosted `Pinned OpenVAF oracle` job always sets `OPENVAF_E2E=1`; missing
+tools, failed compilation, and missing upstream fixtures therefore fail the
+job instead of becoming skipped tests. The job verifies the pinned OpenVAF
+archive and executable SHA-256 values, runs real success and malformed-source
+compilations, exercises process timeout behavior, and executes frontend oracle
+and upstream parity suites through `xcodebuild`. It retains:
+
+| Evidence | Retained content |
+|---|---|
+| Installation manifest | OpenVAF version, archive digest, executable digest, Docker image identity, and shim path |
+| Successful execution | OSDI bytes, staged source, stdout/stderr, invocation, environment, and canonical result JSON |
+| Failed execution | Malformed source, stdout/stderr, invocation, environment, diagnostics, and canonical failure JSON |
+| Test result | Full `OpenVAFOracle.xcresult` bundle |
+
 ### macOS OpenVAF Oracle
 
 OpenVAF does not currently ship a macOS executable. For local oracle testing on macOS, this repository provides a setup script that installs the official Linux x86-64 OpenVAF 23.5.0 binary under `~/.local/share/openvaf`, builds a local Docker image with the required Linux linker toolchain, and writes a `~/.local/bin/openvaf` shim.

@@ -66,3 +66,61 @@ jobs:
 
       - name: Thread Sanitizer
         run: scripts/swift-test-timeout.sh 90 swift test --sanitize=thread
+
+  openvaf-oracle:
+    name: Pinned OpenVAF oracle
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Checkout pinned OpenVAF corpus
+        uses: actions/checkout@v5
+        with:
+          repository: pascalkuthe/OpenVAF
+          ref: a9697ae7780518f021f9f64e819b3a57033bd39f
+          path: .openvaf-upstream
+
+      - name: Start Linux execution environment
+        run: |
+          brew install colima docker
+          colima start --cpu 3 --memory 6 --disk 20
+          docker info
+
+      - name: Install and verify pinned OpenVAF
+        env:
+          OPENVAF_INSTALLATION_EVIDENCE: ${{ github.workspace }}/.real-tool-evidence/openvaf-installation.json
+        run: scripts/install-openvaf-oracle.sh
+
+      - name: Run mandatory real-tool and frontend oracle tests
+        env:
+          OPENVAF_BIN: ${{ runner.home }}/.local/bin/openvaf
+          OPENVAF_E2E: "1"
+          OPENVAF_ORACLE: "1"
+          OPENVAF_UPSTREAM_ROOT: ${{ github.workspace }}/.openvaf-upstream
+          OPENVAF_EVIDENCE_ROOT: ${{ github.workspace }}/.real-tool-evidence/executions
+        run: |
+          mkdir -p .test-results .real-tool-evidence
+          scripts/swift-test-timeout.sh 600 \
+            xcodebuild test \
+              -quiet \
+              -workspace .swiftpm/xcode/package.xcworkspace \
+              -scheme swift-openvaf-Package \
+              -destination 'platform=macOS' \
+              -resultBundlePath .test-results/OpenVAFOracle.xcresult \
+              -only-testing:OpenVAFSupportTests/OpenVAFE2ETests \
+              -only-testing:OpenVAFSupportTests/VerilogACompilerFrontendOracleComparisonTests \
+              -only-testing:OpenVAFSupportTests/OpenVAFUpstreamFrontendParityTests \
+              -only-testing:OpenVAFSupportTests/FoundationOpenVAFProcessRunnerTests
+
+      - name: Retain real-tool evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openvaf-oracle-evidence
+          if-no-files-found: error
+          path: |
+            .real-tool-evidence
+            .test-results/OpenVAFOracle.xcresult

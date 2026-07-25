@@ -9,6 +9,7 @@ binary_sha256="6918195bc6cca54016095923bea190f7a1d96dd8b062104c602e8c28578cb5e3"
 install_root="${OPENVAF_INSTALL_ROOT:-$HOME/.local/share/openvaf/${openvaf_version}/linux-amd64}"
 shim_path="${OPENVAF_SHIM_PATH:-$HOME/.local/bin/openvaf}"
 image_name="${OPENVAF_DOCKER_IMAGE:-swift-openvaf/openvaf-${openvaf_version}:ubuntu22}"
+installation_evidence="${OPENVAF_INSTALLATION_EVIDENCE:-}"
 
 require_command() {
     if ! command -v "$1" >/dev/null 2>&1; then
@@ -89,4 +90,22 @@ mkdir -p "$(dirname "$shim_path")"
 } > "$shim_path"
 chmod 0755 "$shim_path"
 
-"$shim_path" --version
+reported_version="$("$shim_path" --version)"
+printf '%s\n' "$reported_version"
+
+if [ -n "$installation_evidence" ]; then
+    evidence_directory="$(dirname "$installation_evidence")"
+    mkdir -p "$evidence_directory"
+    image_id="$(docker image inspect --format '{{.Id}}' "$image_name")"
+    {
+        printf '%s\n' '{'
+        printf '  "archiveSHA256": "%s",\n' "$archive_sha256"
+        printf '  "binarySHA256": "%s",\n' "$binary_sha256"
+        printf '  "dockerImage": "%s",\n' "$image_name"
+        printf '  "dockerImageID": "%s",\n' "$image_id"
+        printf '  "openVAFVersion": "%s",\n' "$openvaf_version"
+        printf '  "shimPath": "%s"\n' "$shim_path"
+        printf '%s\n' '}'
+    } > "$installation_evidence"
+    printf '%s\n' "$reported_version" > "${installation_evidence%.json}-version.txt"
+fi
