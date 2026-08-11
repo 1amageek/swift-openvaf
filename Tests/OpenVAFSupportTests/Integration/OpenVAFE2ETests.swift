@@ -50,9 +50,12 @@ struct OpenVAFE2ETests {
 
         let invocation = try #require(artifact.provenance.invocation)
         let stagedSourceArtifact = try #require(artifact.provenance.inputs.first)
-        let stagedSourceURL = try stagedSourceArtifact.locator.location.resolvedFileURL()
-        let outputArtifact = try #require(artifact.outputArtifact)
-        let outputURL = try outputArtifact.locator.location.resolvedFileURL()
+        let stagedSourceBinding = try #require(artifact.artifactBindings.first {
+            $0.reference == stagedSourceArtifact
+        })
+        let stagedSourceURL = try stagedSourceBinding.localFileURL()
+        let outputBinding = try #require(artifact.outputBinding)
+        let outputURL = try outputBinding.localFileURL()
 
         #expect(invocation.executable == executableURL.path)
         #expect(invocation.arguments.last == "wrapped-resistor.va")
@@ -62,10 +65,10 @@ struct OpenVAFE2ETests {
         #expect(artifact.exitCode == 0)
         #expect(FileManager.default.fileExists(atPath: outputURL.path))
         #expect(artifact.logArtifacts.count == 2)
-        for reference in artifact.logArtifacts {
-            let url = try reference.locator.location.resolvedFileURL()
+        for binding in artifact.artifactBindings where binding.descriptor.kind == .log {
+            let url = try binding.localFileURL()
             #expect(FileManager.default.fileExists(atPath: url.path))
-            #expect(reference.digest.hexadecimalValue.count == 64)
+            #expect(binding.digest.hexadecimalValue.count == 64)
         }
 
         let attributes = try FileManager.default.attributesOfItem(atPath: outputURL.path)

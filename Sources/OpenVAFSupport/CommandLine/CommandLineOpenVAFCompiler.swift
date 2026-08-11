@@ -1,4 +1,6 @@
 import CircuiteFoundation
+import CircuiteFoundationFileSystem
+import CircuiteFoundationFoundation
 import Foundation
 #if canImport(CryptoKit)
 import CryptoKit
@@ -17,13 +19,15 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
     private let executableResolver: any OpenVAFExecutableResolving
     private let processRunner: any OpenVAFProcessRunning
     private let installationCache: OpenVAFInstallationCache
+    private let artifactReferencer: any ArtifactReferencing
 
     public init(configuration: OpenVAFConfiguration = OpenVAFConfiguration()) {
         self.init(
             configuration: configuration,
             executableResolver: PATHOpenVAFExecutableResolver(),
             processRunner: FoundationOpenVAFProcessRunner(),
-            installationCache: OpenVAFInstallationCache()
+            installationCache: OpenVAFInstallationCache(),
+            artifactReferencer: LocalArtifactReferencer()
         )
     }
 
@@ -31,12 +35,14 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         configuration: OpenVAFConfiguration,
         executableResolver: any OpenVAFExecutableResolving,
         processRunner: any OpenVAFProcessRunning,
-        installationCache: OpenVAFInstallationCache = OpenVAFInstallationCache()
+        installationCache: OpenVAFInstallationCache = OpenVAFInstallationCache(),
+        artifactReferencer: any ArtifactReferencing = LocalArtifactReferencer()
     ) {
         self.configuration = configuration
         self.executableResolver = executableResolver
         self.processRunner = processRunner
         self.installationCache = installationCache
+        self.artifactReferencer = artifactReferencer
     }
 
     public func availability() async -> OpenVAFAvailability {
@@ -1329,18 +1335,17 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
     ) throws(OpenVAFError) -> OpenVAFCompilationResult {
         do {
             let version = openVAFVersion(from: installationMetadata)
-            let artifacts = try compilationArtifacts(
+            let artifactBindings = try compilationArtifactBindings(
                 prepared: prepared,
                 standardOutput: standardOutput,
                 standardError: standardError,
-                includeOutput: true,
-                producer: producerIdentity(version: version)
+                includeOutput: true
             )
-            let outputArtifact = artifacts.first {
-                $0.locator.role == .output && $0.locator.kind == .model
+            let outputArtifact = artifactBindings.first {
+                $0.descriptor.role == .output && $0.descriptor.kind == .model
             }
             return OpenVAFCompilationResult(
-                artifacts: artifacts,
+                artifactBindings: artifactBindings,
                 diagnostics: [DesignDiagnostic(
                     code: .trusted("openvaf.compilation.completed"),
                     severity: .information,
@@ -1350,7 +1355,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 provenance: try executionProvenance(
                     command: command,
                     version: version,
-                    artifacts: artifacts,
+                    artifactBindings: artifactBindings,
                     startedAt: startedAt,
                     finishedAt: finishedAt
                 ),
@@ -1382,21 +1387,20 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
     ) throws(OpenVAFError) -> OpenVAFCompilationFailure {
         do {
             let version = openVAFVersion(from: installationMetadata)
-            let artifacts = try compilationArtifacts(
+            let artifactBindings = try compilationArtifactBindings(
                 prepared: prepared,
                 standardOutput: standardOutput,
                 standardError: standardError,
-                includeOutput: isValidOutputFile(at: prepared.outputURL),
-                producer: producerIdentity(version: version)
+                includeOutput: isValidOutputFile(at: prepared.outputURL)
             )
             return OpenVAFCompilationFailure(
-                artifacts: artifacts,
+                artifactBindings: artifactBindings,
                 diagnostics: [DesignDiagnostic(
                     code: .trusted(diagnosticCode),
                     severity: .error,
                     summary: diagnosticSummary,
                     detail: exitCode.map { "Exit code: \($0)." },
-                    artifactID: artifacts.first { $0.locator.kind == .log }?.id,
+                    artifactID: artifactBindings.first { $0.descriptor.kind == .log }?.id,
                     suggestedActions: [SuggestedAction(
                         code: "inspect_openvaf_log",
                         summary: "Inspect the retained OpenVAF stdout and stderr artifacts."
@@ -1405,7 +1409,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
                 provenance: try executionProvenance(
                     command: command,
                     version: version,
-                    artifacts: artifacts,
+                    artifactBindings: artifactBindings,
                     startedAt: startedAt,
                     finishedAt: finishedAt
                 ),
@@ -1423,122 +1427,111 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         }
     }
 
-    private func compilationArtifacts(
+    private func compilationArtifactBindings(
         prepared: PreparedSource,
         standardOutput: String,
         standardError: String,
-        includeOutput: Bool,
-        producer: ProducerIdentity
-    ) throws -> [ArtifactReference] {
+        includeOutput: Bool
+    ) throws -> [OpenVAFArtifactBinding] {
         let sourceRole = try ArtifactRole(validatingRawValue: "source-input")
         let logRole = try ArtifactRole(validatingRawValue: "log-evidence")
         let verilogAFormat = try ArtifactFormat(rawValue: "verilog-a")
         let osdiFormat = try ArtifactFormat(rawValue: "osdi")
-        var artifacts: [ArtifactReference] = []
+        var artifactBindings: [OpenVAFArtifactBinding] = []
 
         for input in prepared.inputFiles {
             let snapshotData = try Data(contentsOf: input.stagedURL)
             let snapshotDigest = try ContentDigest(algorithm: .sha256, hexadecimalValue: input.sha256)
-            artifacts.append(ArtifactReference(
-                id: ArtifactID(stableKey: "openvaf-source-\(input.logicalPath)-\(input.sha256)"),
-                locator: ArtifactLocator(
-                    location: try ArtifactLocation(fileURL: input.sourceURL),
+            let sourceReference = try ArtifactReference(
+                digest: snapshotDigest,
+                byteCount: UInt64(snapshotData.count),
+                descriptor: ArtifactDescriptor(
                     role: sourceRole,
                     kind: .model,
                     format: verilogAFormat
-                ),
-                digest: snapshotDigest,
-                byteCount: UInt64(snapshotData.count)
+                )
+            )
+            artifactBindings.append(try .local(
+                reference: sourceReference,
+                fileURL: input.sourceURL
             ))
-            artifacts.append(ArtifactReference(
-                id: ArtifactID(stableKey: "openvaf-staged-\(input.stagedRelativePath)-\(input.sha256)"),
-                locator: ArtifactLocator(
-                    location: try ArtifactLocation(fileURL: input.stagedURL),
+            let stagedReference = try ArtifactReference(
+                digest: snapshotDigest,
+                byteCount: UInt64(snapshotData.count),
+                descriptor: ArtifactDescriptor(
                     role: .input,
                     kind: .model,
                     format: verilogAFormat
-                ),
-                digest: snapshotDigest,
-                byteCount: UInt64(snapshotData.count),
-                producer: producer
+                )
+            )
+            artifactBindings.append(try .local(
+                reference: stagedReference,
+                fileURL: input.stagedURL
             ))
         }
 
         if includeOutput {
-            artifacts.append(try artifactReference(
+            artifactBindings.append(try artifactBinding(
                 at: prepared.outputURL,
-                stableID: "openvaf-output-\(prepared.outputURL.lastPathComponent)",
                 role: .output,
                 kind: .model,
-                format: osdiFormat,
-                producer: producer
+                format: osdiFormat
             ))
         }
 
-        artifacts.append(contentsOf: try logArtifactReferences(
+        artifactBindings.append(contentsOf: try logArtifactBindings(
             standardOutput: standardOutput,
             standardError: standardError,
             directory: prepared.commandWorkingDirectory,
-            role: logRole,
-            producer: producer
+            role: logRole
         ))
-        return artifacts
+        return artifactBindings
     }
 
-    private func logArtifactReferences(
+    private func logArtifactBindings(
         standardOutput: String,
         standardError: String,
         directory: URL,
-        role: ArtifactRole,
-        producer: ProducerIdentity
-    ) throws -> [ArtifactReference] {
+        role: ArtifactRole
+    ) throws -> [OpenVAFArtifactBinding] {
         let standardOutputURL = directory.appendingPathComponent("openvaf.stdout.log")
         let standardErrorURL = directory.appendingPathComponent("openvaf.stderr.log")
         try Data(standardOutput.utf8).write(to: standardOutputURL, options: .atomic)
         try Data(standardError.utf8).write(to: standardErrorURL, options: .atomic)
         return [
-            try artifactReference(
+            try artifactBinding(
                 at: standardOutputURL,
-                stableID: "openvaf-standard-output",
                 role: role,
                 kind: .log,
-                format: .text,
-                producer: producer
+                format: .text
             ),
-            try artifactReference(
+            try artifactBinding(
                 at: standardErrorURL,
-                stableID: "openvaf-standard-error",
                 role: role,
                 kind: .log,
-                format: .text,
-                producer: producer
+                format: .text
             ),
         ]
     }
 
-    private func artifactReference(
+    private func artifactBinding(
         at url: URL,
-        stableID: String,
         role: ArtifactRole,
         kind: ArtifactKind,
-        format: ArtifactFormat,
-        producer: ProducerIdentity
-    ) throws -> ArtifactReference {
-        let data = try Data(contentsOf: url)
-        return ArtifactReference(
-            id: ArtifactID(stableKey: stableID + "-" + url.standardizedFileURL.path),
-            locator: ArtifactLocator(
+        format: ArtifactFormat
+    ) throws -> OpenVAFArtifactBinding {
+        let reference = try artifactReferencer.reference(
+            ArtifactLocator(
                 location: try ArtifactLocation(fileURL: url),
                 role: role,
                 kind: kind,
                 format: format
             ),
-            digest: try ContentDigest(
-                algorithm: .sha256,
-                hexadecimalValue: sha256HexDigest(of: SHA256.hash(data: data))
-            ),
-            byteCount: UInt64(data.count),
-            producer: producer
+            relativeTo: nil
+        )
+        return try OpenVAFArtifactBinding.local(
+            reference: reference,
+            fileURL: url
         )
     }
 
@@ -1553,7 +1546,7 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
     private func executionProvenance(
         command: OpenVAFProcessCommand,
         version: String?,
-        artifacts: [ArtifactReference],
+        artifactBindings: [OpenVAFArtifactBinding],
         startedAt: Date,
         finishedAt: Date
     ) throws -> ExecutionProvenance {
@@ -1565,7 +1558,9 @@ public struct CommandLineOpenVAFCompiler: OpenVAFCompiler {
         )
         return try ExecutionProvenance(
             producer: producerIdentity(version: version),
-            inputs: artifacts.filter { $0.locator.role == .input },
+            inputs: artifactBindings
+                .filter { $0.descriptor.role == .input }
+                .map(\.reference),
             invocation: ExecutionInvocation.externalProcess(
                 executable: command.executableURL.path(percentEncoded: false),
                 arguments: command.arguments,

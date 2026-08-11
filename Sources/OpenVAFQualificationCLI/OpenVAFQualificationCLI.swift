@@ -1,4 +1,6 @@
 import CircuiteFoundation
+import CircuiteFoundationCrypto
+import CircuiteFoundationFoundation
 import Foundation
 import OpenVAFSupport
 import VerilogACompiler

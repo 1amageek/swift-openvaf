@@ -54,8 +54,8 @@ struct VerilogACompilerFrontendOracleComparisonTests {
                 outputFileName: "\(fixture.fileStem).osdi"
             ))
 
-            let outputArtifact = try #require(artifact.outputArtifact)
-            let outputURL = try outputArtifact.locator.location.resolvedFileURL()
+            let outputBinding = try #require(artifact.outputBinding)
+            let outputURL = try outputBinding.localFileURL()
             #expect(artifact.exitCode == 0)
             #expect(outputURL.lastPathComponent == "\(fixture.fileStem).osdi")
             #expect(FileManager.default.fileExists(atPath: outputURL.path))

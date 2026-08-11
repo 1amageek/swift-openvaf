@@ -1,35 +1,42 @@
 import CircuiteFoundation
+import CircuiteFoundationFoundation
 import Foundation
 
 /// Canonical evidence produced by a successful OpenVAF compilation.
-public struct OpenVAFCompilationResult: ArtifactProducing, DiagnosticReporting, Sendable, Hashable, Codable {
-    public let artifacts: [ArtifactReference]
+public struct OpenVAFCompilationResult: OpenVAFArtifactBindingProviding, DiagnosticReporting, Sendable, Hashable, Codable {
+    public let artifactBindings: [OpenVAFArtifactBinding]
     public let diagnostics: [DesignDiagnostic]
     public let provenance: ExecutionProvenance
     public let openVAFVersion: String?
     public let exitCode: Int32
 
     public init(
-        artifacts: [ArtifactReference],
+        artifactBindings: [OpenVAFArtifactBinding],
         diagnostics: [DesignDiagnostic],
         provenance: ExecutionProvenance,
         openVAFVersion: String?,
         exitCode: Int32
     ) {
-        self.artifacts = artifacts
+        self.artifactBindings = artifactBindings
         self.diagnostics = diagnostics
         self.provenance = provenance
         self.openVAFVersion = openVAFVersion
         self.exitCode = exitCode
     }
 
-    public var outputArtifact: ArtifactReference? {
-        artifacts.first {
-            $0.locator.role == .output && $0.locator.kind == .model
+    public var outputBinding: OpenVAFArtifactBinding? {
+        artifactBindings.first {
+            $0.descriptor.role == .output && $0.descriptor.kind == .model
         }
     }
 
+    public var outputArtifact: ArtifactReference? {
+        outputBinding?.reference
+    }
+
     public var logArtifacts: [ArtifactReference] {
-        artifacts.filter { $0.locator.kind == .log }
+        artifactBindings
+            .filter { $0.descriptor.kind == .log }
+            .map(\.reference)
     }
 }

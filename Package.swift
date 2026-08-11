@@ -69,6 +69,8 @@ let package = Package(
             dependencies: [
                 "VerilogACompiler",
                 .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+                .product(name: "CircuiteFoundationFoundation", package: "CircuiteFoundation"),
+                .product(name: "CircuiteFoundationFileSystem", package: "CircuiteFoundation"),
                 .product(name: "Crypto", package: "swift-crypto"),
             ]
         ),
@@ -78,6 +80,8 @@ let package = Package(
                 "OpenVAFSupport",
                 "VerilogACompiler",
                 .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+                .product(name: "CircuiteFoundationCrypto", package: "CircuiteFoundation"),
+                .product(name: "CircuiteFoundationFoundation", package: "CircuiteFoundation"),
             ]
         ),
         .testTarget(
@@ -86,6 +90,7 @@ let package = Package(
                 "OpenVAFSupport",
                 "VerilogACompiler",
                 .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+                .product(name: "CircuiteFoundationFoundation", package: "CircuiteFoundation"),
             ]
         ),
     ],

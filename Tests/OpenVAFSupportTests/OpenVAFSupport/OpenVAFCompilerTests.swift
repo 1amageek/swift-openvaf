@@ -1,4 +1,5 @@
 import CircuiteFoundation
+import CircuiteFoundationFoundation
 import Foundation
 import Testing
 @testable import OpenVAFSupport
@@ -445,7 +446,7 @@ struct CommandLineOpenVAFCompilerTests {
         )
 
         let sourceArtifact = try #require(sourceInputArtifacts(of: artifact).first)
-        #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL.standardizedFileURL)
+        #expect(try sourceArtifact.localFileURL() == sourceURL.standardizedFileURL)
         #expect(try primaryInputArtifact(of: artifact).digest.hexadecimalValue == "7a3d26582b481c84f7300001cbf01b123be5c77da0da7bd1b690a406c5b11687")
         #expect(inputArtifacts(of: artifact).count == 1)
         #expect(sourceInputArtifacts(of: artifact).count == 1)
@@ -1194,7 +1195,7 @@ struct CommandLineOpenVAFCompilerTests {
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
         let sourceArtifact = try #require(sourceInputArtifacts(of: artifact).first)
-        #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL.standardizedFileURL)
+        #expect(try sourceArtifact.localFileURL() == sourceURL.standardizedFileURL)
         #expect(try stagedSourceURL(of: artifact).lastPathComponent == "linked.va")
         #expect(try outputURL(of: artifact).lastPathComponent == "linked.osdi")
     }
@@ -1252,7 +1253,7 @@ struct CommandLineOpenVAFCompilerTests {
         let artifact = try await compiler.compile(sourceAt: sourceURL, to: outputDirectory)
 
         let sourceArtifact = try #require(sourceInputArtifacts(of: artifact).first)
-        #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL.standardizedFileURL)
+        #expect(try sourceArtifact.localFileURL() == sourceURL.standardizedFileURL)
         #expect(try stagedSourceURL(of: artifact).lastPathComponent == "linked.va")
         #expect(try outputURL(of: artifact).lastPathComponent == "linked.osdi")
     }
@@ -1315,11 +1316,11 @@ module model; endmodule
         let stagedInputs = stagedInputArtifacts(of: artifact)
         #expect(sourceInputs.count == 2)
         #expect(stagedInputs.count == 2)
-        #expect(try sourceInputs.map { try $0.locator.location.resolvedFileURL() } == [
+        #expect(try sourceInputs.map { try $0.localFileURL() } == [
             sourceURL,
             includeURL.standardized,
         ])
-        #expect(try stagedInputs.map { try $0.locator.location.resolvedFileURL() } == [
+        #expect(try stagedInputs.map { try $0.localFileURL() } == [
             try workingDirectory(of: artifact.provenance).appendingPathComponent("model.va"),
             try workingDirectory(of: artifact.provenance).appendingPathComponent("params.inc"),
         ])
@@ -2355,7 +2356,7 @@ module model; endmodule
                 #expect(try logText(of: failure, named: "stdout.log") == "")
                 #expect(try logText(of: failure, named: "stderr.log") == "syntax error")
                 let sourceArtifact = try #require(sourceInputArtifacts(of: failure).first)
-                #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL.standardizedFileURL)
+                #expect(try sourceArtifact.localFileURL() == sourceURL.standardizedFileURL)
                 #expect(try primaryInputArtifact(of: failure).digest.hexadecimalValue == "241514cca3430f01b8e7bcf403cb1b7c79675d0b59b6c01f694e544708d57607")
                 #expect(inputArtifacts(of: failure).count == 1)
                 #expect(sourceInputArtifacts(of: failure).count == 1)
@@ -2409,7 +2410,7 @@ module model; endmodule
             switch error {
             case .compilationFailed(let failure):
                 let sourceArtifact = try #require(sourceInputArtifacts(of: failure).first)
-        #expect(try sourceArtifact.locator.location.resolvedFileURL() == sourceURL.standardizedFileURL)
+                #expect(try sourceArtifact.localFileURL() == sourceURL.standardizedFileURL)
                 #expect(try stagedSourceURL(of: failure).lastPathComponent == "linked.va")
                 #expect(try expectedOutputURL(of: failure).lastPathComponent == "linked.osdi")
                 #expect(try invocation(of: failure.provenance).arguments == ["linked.va"])
@@ -2563,8 +2564,8 @@ module model; endmodule
                 #expect(try invocation(of: failure.provenance).arguments == ["timeout.va"])
                 #expect(try logText(of: failure, named: "stdout.log") == "partial")
                 #expect(try logText(of: failure, named: "stderr.log") == "still running")
-                #expect(failure.provenance.startedAt == startedAt)
-                #expect(failure.provenance.completedAt == finishedAt)
+                #expect(failure.provenance.startedAt.foundationDate == startedAt)
+                #expect(failure.provenance.completedAt.foundationDate == finishedAt)
             default:
                 Issue.record("Expected process timeout, got \(error)")
             }
@@ -2617,8 +2618,8 @@ module model; endmodule
                 #expect(try invocation(of: failure.provenance).arguments == ["cancelled.va"])
                 #expect(try logText(of: failure, named: "stdout.log") == "partial")
                 #expect(try logText(of: failure, named: "stderr.log") == "cancelled")
-                #expect(failure.provenance.startedAt == startedAt)
-                #expect(failure.provenance.completedAt == finishedAt)
+                #expect(failure.provenance.startedAt.foundationDate == startedAt)
+                #expect(failure.provenance.completedAt.foundationDate == finishedAt)
             default:
                 Issue.record("Expected process cancellation, got \(error)")
             }
@@ -3936,34 +3937,45 @@ private func isSHA256Hex(_ value: String) -> Bool {
     }
 }
 
-private func outputURL(of report: any ArtifactProducing) throws -> URL {
-    let artifact = try #require(report.artifacts.first {
-        $0.locator.role == .output && $0.locator.kind == .model
+private func outputURL(of report: any OpenVAFArtifactBindingProviding) throws -> URL {
+    let binding = try #require(report.artifactBindings.first {
+        $0.descriptor.role == .output && $0.descriptor.kind == .model
     })
-    return try artifact.locator.location.resolvedFileURL()
+    return try binding.localFileURL()
 }
 
-private func stagedSourceURL(of report: any ArtifactProducing) throws -> URL {
-    let artifact = try #require(report.artifacts.first {
-        $0.locator.role == .input && $0.locator.format.rawValue == "verilog-a"
+private func stagedSourceURL(of report: any OpenVAFArtifactBindingProviding) throws -> URL {
+    let binding = try #require(report.artifactBindings.first {
+        $0.descriptor.role == .input && $0.descriptor.format.rawValue == "verilog-a"
     })
-    return try artifact.locator.location.resolvedFileURL()
+    return try binding.localFileURL()
 }
 
-private func primaryInputArtifact(of report: any ArtifactProducing) throws -> ArtifactReference {
-    try #require(report.artifacts.first { $0.locator.role == .input })
+private func primaryInputArtifact(
+    of report: any OpenVAFArtifactBindingProviding
+) throws -> ArtifactReference {
+    try #require(report.artifactBindings.first { $0.descriptor.role == .input })
+        .reference
 }
 
-private func inputArtifacts(of report: any ArtifactProducing) -> [ArtifactReference] {
-    report.artifacts.filter { $0.locator.role == .input }
+private func inputArtifacts(
+    of report: any OpenVAFArtifactBindingProviding
+) -> [ArtifactReference] {
+    report.artifactBindings
+        .filter { $0.descriptor.role == .input }
+        .map(\.reference)
 }
 
-private func stagedInputArtifacts(of report: any ArtifactProducing) -> [ArtifactReference] {
-    report.artifacts.filter { $0.locator.role == .input }
+private func stagedInputArtifacts(
+    of report: any OpenVAFArtifactBindingProviding
+) -> [OpenVAFArtifactBinding] {
+    report.artifactBindings.filter { $0.descriptor.role == .input }
 }
 
-private func sourceInputArtifacts(of report: any ArtifactProducing) -> [ArtifactReference] {
-    report.artifacts.filter { $0.locator.role.rawValue == "source-input" }
+private func sourceInputArtifacts(
+    of report: any OpenVAFArtifactBindingProviding
+) -> [OpenVAFArtifactBinding] {
+    report.artifactBindings.filter { $0.descriptor.role.rawValue == "source-input" }
 }
 
 private func invocation(of provenance: ExecutionProvenance) throws -> ExecutionInvocation {
@@ -3984,14 +3996,15 @@ private func expectedOutputURL(of failure: OpenVAFCompilationFailure) throws -> 
 }
 
 private func logText(
-    of report: any ArtifactProducing,
+    of report: any OpenVAFArtifactBindingProviding,
     named fileName: String
 ) throws -> String {
-    let artifact = try #require(report.artifacts.first {
-        $0.locator.kind == .log
-            && $0.locator.location.value.contains(fileName)
-    })
-    let url = try artifact.locator.location.resolvedFileURL()
+    let matchingBindings = try report.artifactBindings.filter { binding in
+        guard binding.descriptor.kind == .log else { return false }
+        return try binding.localFileURL().lastPathComponent.contains(fileName)
+    }
+    let binding = try #require(matchingBindings.first)
+    let url = try binding.localFileURL()
     return try String(contentsOf: url, encoding: .utf8)
 }
 
