@@ -1,22 +1,15 @@
 // swift-tools-version: 6.3
 import PackageDescription
-import Foundation
 
-let workspaceRoot = URL(fileURLWithPath: #filePath)
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-let isLSIWorkspace = FileManager.default.fileExists(
-    atPath: workspaceRoot.appendingPathComponent("docs/workspace-packages.json").path
+let circuiteFoundationDependency: Package.Dependency = .package(
+    url: "https://github.com/1amageek/CircuiteFoundation.git",
+    exact: "26.812.0"
 )
 
-let circuiteFoundationDependency: Package.Dependency = isLSIWorkspace && FileManager.default.fileExists(
-    atPath: workspaceRoot.appendingPathComponent("CircuiteFoundation/Package.swift").path
+let signoffToolSupportDependency: Package.Dependency = .package(
+    url: "https://github.com/1amageek/SignoffToolSupport.git",
+    exact: "26.812.0"
 )
-    ? .package(path: "../CircuiteFoundation")
-    : .package(
-        url: "https://github.com/1amageek/CircuiteFoundation.git",
-        revision: "dc792c88e189c822c9f83ea86cf139ee68560dca"
-    )
 
 let package = Package(
     name: "swift-openvaf",
@@ -52,6 +45,7 @@ let package = Package(
     ],
     dependencies: [
         circuiteFoundationDependency,
+        signoffToolSupportDependency,
         .package(
             url: "https://github.com/apple/swift-crypto.git",
             exact: "4.5.1"
@@ -72,6 +66,7 @@ let package = Package(
                 .product(name: "CircuiteFoundationFoundation", package: "CircuiteFoundation"),
                 .product(name: "CircuiteFoundationFileSystem", package: "CircuiteFoundation"),
                 .product(name: "Crypto", package: "swift-crypto"),
+                .product(name: "SignoffToolSupport", package: "SignoffToolSupport"),
             ]
         ),
         .executableTarget(

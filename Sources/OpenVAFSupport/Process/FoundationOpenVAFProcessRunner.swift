@@ -1,206 +1,93 @@
-@preconcurrency import Foundation
-#if canImport(Darwin)
-import Darwin
-#elseif canImport(Glibc)
-import Glibc
-#endif
+import Foundation
+import SignoffToolSupport
 
 #if OpenVAFCLI
 
 package struct FoundationOpenVAFProcessRunner: OpenVAFProcessRunning {
-    private static let pipeReadRetryInterval: Duration = .milliseconds(5)
-
     package init() {}
 
-    package func run(_ command: OpenVAFProcessCommand) async throws -> OpenVAFProcessResult {
+    package func run(
+        _ command: OpenVAFProcessCommand
+    ) async throws -> OpenVAFProcessResult {
         let process = Process()
         process.executableURL = command.executableURL
         process.arguments = command.arguments
         process.environment = command.environment
         process.currentDirectoryURL = command.workingDirectory
 
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-        process.standardInput = FileHandle.nullDevice
-
-        let executablePath = command.executableURL.path
-        let timeout = command.timeout
-        let terminationGrace = command.terminationGrace
-        let postExitOutputDrainGrace = command.postExitOutputDrainGrace
-        let timeoutTask = ProcessTimeoutTask()
-        let controller = ProcessController(process: process)
-        let exitState = ProcessExitState()
-        let coordinator = ProcessRunCoordinator(
-            executablePath: executablePath,
-            timeout: timeout,
-            startedAt: Date()
-        )
-
-        return try await withTaskCancellationHandler {
-            if Task.isCancelled {
-                Self.closePipeHandles(outputPipe: outputPipe, errorPipe: errorPipe)
-                await coordinator.recordPrelaunchCancellation()
-                return try await coordinator.waitForResult()
-            }
-
-            process.terminationHandler = { terminatedProcess in
-                let status = exitState.record(status: terminatedProcess.terminationStatus)
-                Task { await coordinator.recordExit(status) }
-            }
-
-            do {
-                try await controller.run()
-            } catch {
-                Self.closePipeHandles(outputPipe: outputPipe, errorPipe: errorPipe)
-                await coordinator.recordLaunchFailure(error.localizedDescription)
-                return try await coordinator.waitForResult()
-            }
-
-            Self.closeWriteHandles(outputPipe: outputPipe, errorPipe: errorPipe)
-
-            let outputTask = Task.detached(priority: nil) {
-                let data = await Self.readAllData(
-                    from: outputPipe.fileHandleForReading.fileDescriptor,
-                    coordinator: coordinator,
-                    postExitDrainGrace: postExitOutputDrainGrace
+        let startedAt = Date()
+        do {
+            let result = try await TimedProcessRunner(
+                timeoutSeconds: command.timeout.secondsValue,
+                terminationGraceSeconds: command.terminationGrace.secondsValue,
+                pipeDrainGraceSeconds: command.postExitOutputDrainGrace.secondsValue
+            ).run(process: process)
+            return OpenVAFProcessResult(
+                exitCode: result.exitCode,
+                standardOutput: result.standardOutput,
+                standardError: result.standardError,
+                startedAt: startedAt,
+                finishedAt: Date()
+            )
+        } catch let error as TimedProcessError {
+            let finishedAt = Date()
+            switch error {
+            case .launchFailed(let executablePath, let message):
+                throw OpenVAFProcessError.launchFailed(
+                    executablePath: executablePath,
+                    message: message
                 )
-                await coordinator.recordOutput(data)
-            }
-            let errorTask = Task.detached(priority: nil) {
-                let data = await Self.readAllData(
-                    from: errorPipe.fileHandleForReading.fileDescriptor,
-                    coordinator: coordinator,
-                    postExitDrainGrace: postExitOutputDrainGrace
+            case .invalidConfiguration(let message):
+                throw OpenVAFProcessError.launchFailed(
+                    executablePath: command.executableURL.path,
+                    message: message
                 )
-                await coordinator.recordError(data)
-            }
-
-            timeoutTask.set(Task { @Sendable in
-                do {
-                    try await ContinuousClock().sleep(for: timeout)
-                } catch {
-                    return
-                }
-                guard await controller.prepareTerminationIfRunningOrPendingStart() else { return }
-                await coordinator.requestTermination(.timedOut)
-                await controller.applyPreparedTermination()
-
-                do {
-                    try await ContinuousClock().sleep(for: terminationGrace)
-                } catch {
-                    return
-                }
-                guard await controller.isRunning() else { return }
-                await controller.forceKillIfRunning()
-            })
-
-            defer {
-                timeoutTask.cancel()
-                outputTask.cancel()
-                errorTask.cancel()
-                Self.closeReadHandles(outputPipe: outputPipe, errorPipe: errorPipe)
-            }
-
-            return try await coordinator.waitForResult()
-        } onCancel: {
-            timeoutTask.cancel()
-            Task {
-                guard exitState.recordedStatus() == nil else { return }
-                guard await controller.prepareTerminationIfRunningOrPendingStart() else { return }
-                await coordinator.requestTermination(.cancelled)
-                await controller.applyPreparedTermination()
-                do {
-                    try await ContinuousClock().sleep(for: terminationGrace)
-                } catch {
-                    return
-                }
-                await controller.forceKillIfRunning()
+            case .timedOut(
+                let executablePath,
+                _,
+                let standardOutput,
+                let standardError
+            ):
+                throw OpenVAFProcessError.timedOut(
+                    executablePath: executablePath,
+                    timeout: command.timeout,
+                    standardOutput: standardOutput,
+                    standardError: standardError,
+                    startedAt: startedAt,
+                    finishedAt: finishedAt
+                )
+            case .cancelled(
+                let executablePath,
+                let standardOutput,
+                let standardError
+            ):
+                throw OpenVAFProcessError.cancelled(
+                    executablePath: executablePath,
+                    standardOutput: standardOutput,
+                    standardError: standardError,
+                    startedAt: startedAt,
+                    finishedAt: finishedAt
+                )
+            case .cancellationCheckFailed(
+                let executablePath,
+                let message,
+                _,
+                _
+            ):
+                throw OpenVAFProcessError.launchFailed(
+                    executablePath: executablePath,
+                    message: message
+                )
             }
         }
     }
+}
 
-    private static func closePipeHandles(outputPipe: Pipe, errorPipe: Pipe) {
-        closeWriteHandles(outputPipe: outputPipe, errorPipe: errorPipe)
-        closeReadHandles(outputPipe: outputPipe, errorPipe: errorPipe)
-    }
-
-    private static func closeWriteHandles(outputPipe: Pipe, errorPipe: Pipe) {
-        outputPipe.fileHandleForWriting.closeFile()
-        errorPipe.fileHandleForWriting.closeFile()
-    }
-
-    private static func closeReadHandles(outputPipe: Pipe, errorPipe: Pipe) {
-        outputPipe.fileHandleForReading.closeFile()
-        errorPipe.fileHandleForReading.closeFile()
-    }
-
-    private static func readAllData(
-        from fileDescriptor: Int32,
-        coordinator: ProcessRunCoordinator,
-        postExitDrainGrace: Duration
-    ) async -> Data {
-        let clock = ContinuousClock()
-        let originalFlags = fcntl(fileDescriptor, F_GETFL)
-        let didSetNonBlocking: Bool
-        if originalFlags == -1 {
-            didSetNonBlocking = false
-        } else {
-            didSetNonBlocking = fcntl(fileDescriptor, F_SETFL, originalFlags | O_NONBLOCK) != -1
-        }
-        defer {
-            if didSetNonBlocking {
-                _ = fcntl(fileDescriptor, F_SETFL, originalFlags)
-            }
-        }
-
-        var result = Data()
-        var buffer = [UInt8](repeating: 0, count: 4096)
-        var postExitDrainBeganAt: ContinuousClock.Instant?
-
-        while true {
-            if await coordinator.hasProcessFinished() {
-                let now = clock.now
-                if let drainBeganAt = postExitDrainBeganAt {
-                    if drainBeganAt.duration(to: now) >= postExitDrainGrace {
-                        break
-                    }
-                } else {
-                    postExitDrainBeganAt = now
-                }
-            }
-
-            let byteCount = buffer.withUnsafeMutableBufferPointer { pointer in
-                read(fileDescriptor, pointer.baseAddress, pointer.count)
-            }
-
-            if byteCount > 0 {
-                result.append(contentsOf: buffer.prefix(byteCount))
-                continue
-            }
-
-            if byteCount == 0 {
-                break
-            }
-
-            if errno == EINTR {
-                continue
-            }
-
-            if errno == EAGAIN || errno == EWOULDBLOCK {
-                do {
-                    try await clock.sleep(for: Self.pipeReadRetryInterval)
-                } catch {
-                    break
-                }
-                continue
-            }
-
-            break
-        }
-
-        return result
+private extension Duration {
+    var secondsValue: Double {
+        let components = self.components
+        return Double(components.seconds)
+            + Double(components.attoseconds) / 1_000_000_000_000_000_000
     }
 }
 
